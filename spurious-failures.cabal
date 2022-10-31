@@ -10,6 +10,7 @@ maintainer:         bryan@haskell.foundation
 common defaults
     hs-source-dirs:   .
     default-language: Haskell2010
+    ghc-options: -rtsopts -threaded -with-rtsopts=-N4
 
 common deps
     build-depends:
@@ -30,8 +31,8 @@ common deps
 
 executable ci-failure-update
     import: defaults, deps
-    main-is:          ci-failure-update.hs
+    main-is: ci-failure-update.hs
 
 executable fetch-job-data
     import: defaults, deps
-    main-is:          fetch-job-data.hs
+    main-is: fetch-job-data.hs
