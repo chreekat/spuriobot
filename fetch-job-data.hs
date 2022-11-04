@@ -36,8 +36,8 @@ import Debug.Trace
 
 -- For each project
 --   - Look up the most-recent fetched job
---   - Start fetching jobs until the most-recent has been fetched and/or we've
---     fetched a job older than a month old.
+--   - Start fetching jobs until we don't see new ones and/or we've fetched a
+--     job older than a month old.
 --   - Store the job info we care about.
 --       - (Or just store the entire json blob! Why not!)
 --   - Fetch the trace for the job
@@ -124,7 +124,7 @@ api uri key =
 
 -- | Get a list of jobs in a single query. Includes info about whether we should
 -- continue.
-queryJobs key minAge jobUrl = do
+queryJobs key minAge jobUrl connVar = do
     resp <- api jobUrl key
 
     nextLink <- head <$> responseLinks "rel" "next" resp
@@ -133,19 +133,25 @@ queryJobs key minAge jobUrl = do
     -- Check if we're still in the age range
     let inAgeRange j = createdAt j > minAge
 
-    pure $ if all inAgeRange jobs
+    -- And that we are still seeing new jobs
+    [Only seenCount] <- bracketDB "new jobs?" connVar $ \conn -> do
+        execute_ conn "create temp table if not exists fetched_jobs (job_id primary key) without rowid"
+        execute_ conn "delete from fetched_jobs"
+        executeMany conn "insert into fetched_jobs (job_id) values (?)" (map (Only . jobId) jobs)
+        query_ conn "select count(*) from job j join fetched_jobs f on f.job_id = j.job_id"
+    let stillNewJobs = length jobs > seenCount
+
+    pure $ if all inAgeRange jobs && stillNewJobs
         then WithMore nextLink jobs
-        else
-            let goodJobs = filter inAgeRange jobs
-            in NoMore goodJobs
+        else NoMore jobs
 
 -- | Get all jobs later than a given age.
-getJobs key minAge jobUrl = do
+getJobs key minAge jobUrl connVar = do
     logg $ "Get " <> (T.encodeUtf8 (render jobUrl))
-    res <- lift $ queryJobs key minAge jobUrl
+    res <- lift $ queryJobs key minAge jobUrl connVar
     case res of
         NoMore jobs -> pure jobs
-        WithMore nextUrl jobs -> pure jobs <|> getJobs key minAge nextUrl
+        WithMore nextUrl jobs -> pure jobs <|> getJobs key minAge nextUrl connVar
 
 data Trace = Trace
     { tid :: Int
@@ -205,7 +211,7 @@ clearStagedJobs key connVar = do
 stageJobs key connVar lastMonth projURL = do
     logg "Staging jobs"
     runListT $ do
-        j <- getJobs key lastMonth projURL
+        j <- getJobs key lastMonth projURL connVar
         bracketDB "insert jobs" connVar $ \conn -> executeMany conn "insert into job values (?,?,?,?,?,?,?,?,?) on conflict do nothing" j
 
 main = do
