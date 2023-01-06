@@ -1,0 +1,13 @@
+# TODO pin with niv or flakes or something
+with import <nixpkgs> {};
+
+let ourGhc = ghc.withPackages (p: with p; [
+  aeson
+  servant-client
+  haskell-language-server
+  ]);
+in
+
+mkShell rec {
+  buildInputs = [ ourGhc ];
+}
