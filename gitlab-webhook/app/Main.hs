@@ -1,6 +1,8 @@
 module Main (main) where
 
-import Lib
+import Network.Wai.Handler.Warp
+
+import GL
 
 main :: IO ()
-main = someFunc
+main = run 8080 webhookApplication

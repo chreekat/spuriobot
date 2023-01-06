@@ -1,3 +1,5 @@
-with (import <nixpkgs> {});
+{ pkgs ? import <nixpkgs> {}}:
 
-haskellPackages.callPackage ./gitlab-webhook.nix {}
+with pkgs;
+
+haskellPackages.callCabal2nix "gitlab-webhook" ./. {}

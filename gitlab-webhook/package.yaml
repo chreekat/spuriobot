@@ -10,6 +10,7 @@ extra-source-files:
 - README.md
 - CHANGELOG.md
 
+# TODO clean this up
 # Metadata used when publishing your package
 # synopsis:            Short description of your package
 # category:            Web
@@ -19,8 +20,20 @@ extra-source-files:
 # common to point users to the README.md file.
 description:         Please see the README on GitHub at <https://github.com/githubuser/gitlab-webhook#readme>
 
+default-extensions:
+- OverloadedStrings
+
 dependencies:
 - base >= 4.7 && < 5
+- aeson
+- bytestring
+- http-client
+- req
+- servant
+- servant-client
+- servant-server
+- wai
+- warp
 
 ghc-options:
 - -Wall
@@ -37,7 +50,7 @@ library:
   source-dirs: src
 
 executables:
-  gitlab-webhook-exe:
+  gitlab-webhook:
     main:                Main.hs
     source-dirs:         app
     ghc-options:
@@ -57,3 +70,4 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - gitlab-webhook
+    - hspec
