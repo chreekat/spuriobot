@@ -1,8 +1,12 @@
 { pkgs ? import <nixpkgs> {} }:
-(pkgs.haskell.lib.addBuildTool
+(pkgs.haskell.lib.addBuildTools
   (import ./. { inherit pkgs; })
+  [
   pkgs.cabal-install
-  ).env.overrideAttrs (o: { buildInputs = o.buildInputs ++ [ pkgs.haskell-language-server ];})
+  pkgs.haskell-language-server
+  pkgs.haskellPackages.fourmolu
+  ]
+  ).env
 
 
 #with (import <nixpkgs> {});

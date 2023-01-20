@@ -27,11 +27,15 @@ dependencies:
 - base >= 4.7 && < 5
 - aeson
 - bytestring
+- containers
 - http-client
+- postgresql-simple
+- regex-tdfa
 - req
 - servant
 - servant-client
 - servant-server
+- text
 - wai
 - warp
 

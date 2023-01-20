@@ -1,4 +1,4 @@
-module Main where
+module Main (main) where
 
 import Control.Concurrent
 import Data.Aeson
@@ -28,8 +28,10 @@ main = hspec $ do
     describe "Serve a GL webhook" $ do
         it "can accept a GLBuildEvent POST" $ do
             event <- fromRight undefined <$> eitherDecodeFileStrict "testdata/event.json"
-            t <- forkIO $ run 8080 webhookApplication
+            t <- forkIO $ run 8080 (webhookApplication "host=localhost") -- FIXME: provide a test db
             manager <- newManager defaultManagerSettings
             res <- runClientM (postGLBuildEvent event) (mkClientEnv manager (BaseUrl Http "localhost" 8080 ""))
             res `shouldSatisfy` isRight
             killThread t
+
+-- TODO: more tests..
