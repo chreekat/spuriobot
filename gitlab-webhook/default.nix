@@ -1,5 +1,5 @@
-{ pkgs ? import <nixpkgs> {}}:
+{ sources ? import ./nix/sources.nix }:
 
-with pkgs;
-
-haskellPackages.callCabal2nix "gitlab-webhook" ./. {}
+let pkgs = import sources.nixpkgs { overlays = []; config = {}; };
+in
+pkgs.haskellPackages.callCabal2nix "gitlab-webhook" ./. {}

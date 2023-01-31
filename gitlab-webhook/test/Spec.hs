@@ -1,6 +1,7 @@
 module Main (main) where
 
 import Control.Concurrent
+import Control.Monad (when)
 import Data.Aeson
 import qualified Data.ByteString.Lazy.Char8 as B
 import Data.Either (
@@ -29,6 +30,8 @@ main = hspec $ do
             let eiDecoded = eitherDecode f :: Either String GLBuildEvent
             eiDecoded `shouldSatisfy` isRight
     describe "Serve a GL webhook" $ do
+        -- FIXME this actually hits gitlab; and refernces a job that will be garbage collected eventually
+        -- so at least disable this in nix, and probably get rid of it altogether
         it "can accept a GLBuildEvent POST" $ do
             event <- fromRight undefined <$> eitherDecodeFileStrict "testdata/event.json"
             t <- forkIO $ run testWebPort (webhookApplication "host=localhost" "fake_api_token")
@@ -40,5 +43,3 @@ main = hspec $ do
         it "can find a sample error" $ do
             logText <- T.readFile "testdata/kill9failure.log"
             grepForFailures logText `shouldBe` S.fromList [("signal_9", "received signal 9")]
-
--- TODO: more tests..
