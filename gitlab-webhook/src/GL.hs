@@ -1,11 +1,13 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeOperators #-}
 
 module GL (
-    webhookApplication,
-    postGLBuildEvent,
     GLBuildEvent (..),
+    grepForFailures,
+    postGLBuildEvent,
+    webhookApplication,
 ) where
 
 -- FIXME constrain imports
@@ -16,65 +18,96 @@ import Control.Monad (
     void,
  )
 import Control.Monad.IO.Class (liftIO)
-import Data.Aeson
+import Data.Aeson (
+    FromJSON,
+    ToJSON,
+    object,
+    parseJSON,
+    toJSON,
+    withObject,
+    (.:),
+    (.=),
+ )
 import Data.ByteString (ByteString)
 import Data.Maybe (mapMaybe)
-import Data.Proxy
+import Data.Set (Set)
+import qualified Data.Set as S
 import Data.Text (Text)
 import qualified Data.Text as T
-import Database.PostgreSQL.Simple
-import Network.HTTP.Req as R
-import Network.Wai
-import Servant
-import Servant.Client (ClientM, client)
-import Text.Regex.TDFA
+import Data.Text.Encoding
+import qualified Data.Text.IO as T
+import Network.HTTP.Req (
+    NoReqBody (..),
+    bsResponse,
+    defaultHttpConfig,
+    headerRedacted,
+    req,
+    responseBody,
+    runReq,
+    useHttpsURI,
+ )
+import qualified Network.HTTP.Req as R
+import Servant (
+    Application,
+    JSON,
+    Post,
+    Proxy (..),
+    ReqBody,
+    Server,
+    serve,
+    (:>),
+ )
+import Servant.Client (
+    ClientM,
+    client,
+ )
+import Text.Regex.TDFA (
+    (=~),
+ )
+import Text.URI (mkURI)
+import TextShow (showt)
 
--- overall flow of the application?
+import GLApi
+
+-- overall flow of the application:
 --
 -- receive a webhook call
 -- fetch the job log
 -- grep for patterns in the log
 -- write results to database
--- (maybe tell the job to retry? ask bryan)
---
+-- TODO: tell the job to retry
 --
 -- we want to:
---   replicate existing behaviour
---   with tests
---   and a systemd unit
---   deployable via nix
-
--- TODO: add this back in
-newtype GitlabEventHeader = GitlabEventHeader Text deriving (Eq, Show)
+--
+-- replicate existing behaviour
+-- with tests
+-- and a systemd unit
+-- deployable via nix
 
 type WebHookAPI =
-    -- FIXME stupid formolu formatting
-    ReqBody '[JSON] GLBuildEvent
-        --        :> Header "Gitlab-Event" GitlabEventHeader
-        :> Post '[JSON] ()
+    ReqBody '[JSON] GLBuildEvent :> Post '[JSON] ()
 
-webhookServer :: ByteString -> Server WebHookAPI
-webhookServer connString glBuildEvent = do
+webhookServer :: ByteString -> GLApi.Token -> Server WebHookAPI
+webhookServer connString apiToken glBuildEvent = do
+    -- TODO proper logging
     liftIO $ print glBuildEvent
-    liftIO $ void $ forkIO (processJob connString (jobInfoFromBuildEvent glBuildEvent))
-
-jobInfoFromBuildEvent :: GLBuildEvent -> GLJobInfo
-jobInfoFromBuildEvent GLBuildEvent{..} =
-    GLJobInfo
-        { glJobId = show glbBuildId
-        , glJobDate = glbCreated
-        , glJobWebURL = undefined
-        , glJobRunnerId = undefined
-        }
-
--- webhookServer glBuildEvent gitlabEventHeader = do
---    liftIO $ print glBuildEvent >> print gitlabEventHeader
+    liftIO . void . forkIO $
+        processJob
+            connString
+            apiToken
+            glBuildEvent
 
 webhookAPI :: Proxy WebHookAPI
 webhookAPI = Proxy
 
-webhookApplication :: ByteString -> Application
-webhookApplication = serve webhookAPI . webhookServer
+webhookApplication :: String -> String -> Application
+webhookApplication connStr strApiToken =
+    serve
+        webhookAPI
+        ( webhookServer
+            (encodeUtf8 . T.pack $ connStr)
+            (encodeUtf8 . T.pack $ strApiToken)
+        )
 
 -- for testing the webhook
 -- This isn't a great test, because we are only sending a subset of the fields
@@ -82,68 +115,26 @@ webhookApplication = serve webhookAPI . webhookServer
 postGLBuildEvent :: GLBuildEvent -> ClientM ()
 postGLBuildEvent = client webhookAPI
 
-data GLCommit = GLCommit
-    { glcId :: Int
-    , glcSha :: String
-    , glcMessage :: String
-    , glcAuthorName :: String
-    }
-    deriving (Show, Ord, Eq)
-
-instance FromJSON GLCommit where
-    parseJSON = withObject "GLCommit" $ \v ->
-        GLCommit
-            <$> v
-            .: "id"
-            <*> v
-            .: "sha"
-            <*> v
-            .: "message"
-            <*> v
-            .: "author_name"
-
-instance ToJSON GLCommit where
-    toJSON x =
-        object
-            [ "id" .= glcId x
-            , "sha" .= glcSha x
-            , "message" .= glcMessage x
-            , "author_name" .= glcAuthorName x
-            ]
-
--- FIXME what's the difference between a "Build" and a "Job"?
+-- BuildEvent is what the webhook receives
 data GLBuildEvent = GLBuildEvent
     { glbRef :: String
     , glbBuildId :: Int
     , glbBuildName :: String
-    , glbBuildStatus :: String -- FIXME
+    , glbBuildStatus :: String
     , glbBuildFailureReason :: String
     , glbProjectId :: Int
-    , glbCommit :: GLCommit
-    , glbCreated :: String
     }
     deriving (Show, Ord, Eq)
 
--- FIXME fourmolu too opinionated here
 instance FromJSON GLBuildEvent where
     parseJSON = withObject "GLBuildEvent" $ \v ->
         GLBuildEvent
-            <$> v
-            .: "ref"
-            <*> v
-            .: "build_id"
-            <*> v
-            .: "build_name"
-            <*> v
-            .: "build_status"
-            <*> v
-            .: "build_failure_reason"
-            <*> v
-            .: "project_id"
-            <*> v
-            .: "commit"
-            <*> v
-            .: "build_created_at"
+            <$> v .: "ref"
+            <*> v .: "build_id"
+            <*> v .: "build_name"
+            <*> v .: "build_status"
+            <*> v .: "build_failure_reason"
+            <*> v .: "project_id"
 
 instance ToJSON GLBuildEvent where
     toJSON x =
@@ -154,38 +145,45 @@ instance ToJSON GLBuildEvent where
             , "build_status" .= glbBuildStatus x
             , "build_failure_reason" .= glbBuildFailureReason x
             , "project_id" .= glbProjectId x
-            , "commit" .= glbCommit x
-            , "build_created_at" .= glbCreated x
             ]
 
-fetchJobLogs :: String -> IO String
-fetchJobLogs glJobWebUrl = runReq defaultHttpConfig $ do
-    -- TODO handle redirect to login which is gitlab's way of saying 404
-    -- if re.search('users/sign_in$', resp.url):
-    r <- req R.GET (https "gitlab.haskell.org" /: (T.pack . show $ glJobWebUrl)) NoReqBody jsonResponse mempty
-    pure $ show (r :: JsonResponse ()) -- FIXME placeholder type
+fetchJobLogs :: GLApi.Token -> GLApi.JobWebURL -> IO Text
+fetchJobLogs apiToken jobWebURL = do
+    -- Using pre-encoded URLs in Req is like pulling teeth
+    -- We can't even chain the Maybes with <$> (or I couldn't, anyway)
+    -- Hence these non-exhaustive pattern matches
+    let Just uri = mkURI (jobWebURL <> "/raw")
+        Just (uri', _) = useHttpsURI uri
+    runReq defaultHttpConfig $ do
+        -- TODO handle redirect to login which is gitlab's way of saying 404
+        -- if re.search('users/sign_in$', resp.url):
+        response <-
+            req
+                R.GET
+                uri'
+                NoReqBody
+                bsResponse
+                (headerRedacted "PRIVATE-TOKEN" apiToken)
+
+        liftIO . pure . decodeUtf8 . responseBody $ response
 
 -- the code that we inject into the database
-type FailureErrorCode = String
-
-type GLJobId = String
+type FailureErrorCode = Text
 
 -- the message we echo to stdout
-type FailureMessage = String
+type FailureMessage = Text
 
-type JobFailureMessage = (GLJobId, FailureMessage)
-
-type Failure = (FailureErrorCode, JobFailureMessage)
+type Failure = (FailureErrorCode, FailureMessage)
 
 -- TODO tests
-grepForFailures :: GLJobId -> [String] -> [Failure]
-grepForFailures jobId =
-    concatMap f
+grepForFailures :: Text -> Set Failure
+grepForFailures =
+    S.fromList . concatMap searchErrors . T.lines
   where
-    f :: String -> [Failure]
-    f s = mapMaybe (g s) regexes
-    g :: String -> (String, (FailureMessage, FailureErrorCode)) -> Maybe Failure
-    g line (regex, (msg, code)) = if line =~ regex then Just (code, (jobId, msg)) else Nothing
+    searchErrors :: Text -> [Failure]
+    searchErrors s = mapMaybe (findError s) regexes
+    findError :: Text -> (Text, (FailureMessage, FailureErrorCode)) -> Maybe Failure
+    findError line (regex, (msg, code)) = if line =~ regex then Just (code, msg) else Nothing
     regexes =
         [
             ( "Cannot connect to the Docker daemon at unix:///var/run/docker.sock"
@@ -222,44 +220,38 @@ grepForFailures jobId =
         ]
 
 -- TODO real logging
-logFailures :: [Failure] -> IO ()
-logFailures failures =
+logFailures :: GLApi.JobId -> Set Failure -> IO ()
+logFailures jobId failures =
     forM_
-        failures
-        ( \(_, (jobId, msg)) ->
-            putStrLn $ "job " <> jobId <> ": " <> msg
+        (S.toList failures)
+        ( \(_, msg) ->
+            T.putStrLn $ "job " <> showt jobId <> ": " <> msg
         )
 
-writeFailuresToDB :: ByteString -> String -> String -> String -> [Failure] -> IO ()
-writeFailuresToDB connString jobDate jobWebUrl jobRunnerId failures = do
-    conn <- connectPostgreSQL connString
-    void $
-        executeMany
-            conn
-            dbString
-            values
-  where
-    dbString :: Query
-    dbString =
-        mconcat
-            [ "insert into ci_failure (job_id, type, job_date, web_url, runner_id)"
-            , "values (?,?,?,?,?)"
-            , "on conflict do nothing"
-            ]
-    values = map (\(code, (jobId, _)) -> (jobId, code, jobDate, jobWebUrl, jobRunnerId)) failures
+-- writeFailuresToDB :: ByteString -> String -> String -> String -> [Failure] -> IO ()
+-- writeFailuresToDB connString jobDate jobWebUrl jobRunnerId failures = do
+--    conn <- connectPostgreSQL connString
+--    void $
+--        executeMany
+--            conn
+--            dbString
+--            values
+--  where
+--    dbString :: Query
+--    dbString =
+--        mconcat
+--            [ "insert into ci_failure (job_id, type, job_date, web_url, runner_id)"
+--            , "values (?,?,?,?,?)"
+--            , "on conflict do nothing"
+--            ]
+--    values = map (\(code, (jobId, _)) -> (jobId, code, jobDate, jobWebUrl, jobRunnerId)) failures
 
-data GLJobInfo = GLJobInfo
-    { glJobId :: GLJobId
-    , glJobDate :: String
-    , glJobWebURL :: String
-    , glJobRunnerId :: String
-    }
-    deriving (Show, Ord, Eq)
+processJob :: ByteString -> GLApi.Token -> GLBuildEvent -> IO ()
+processJob _connString apiToken GLBuildEvent{..} = do
+    jobInfo <- fetchJobInfo apiToken glbProjectId glbBuildId
+    logs <- fetchJobLogs apiToken (webUrl jobInfo)
+    let failures = grepForFailures logs
+    logFailures glbBuildId failures
 
-processJob :: ByteString -> GLJobInfo -> IO ()
-processJob connString GLJobInfo{..} = do
-    logs <- fetchJobLogs glJobId
-    let failures = grepForFailures glJobId . lines $ logs
-    logFailures failures
-    -- TODO keep a persistent connection around rather than making a new one each time
-    writeFailuresToDB connString glJobDate glJobWebURL glJobRunnerId failures
+-- TODO keep a persistent connection around rather than making a new one each time
+-- writeFailuresToDB connString glJobDate glJobWebURL glJobRunnerId failures

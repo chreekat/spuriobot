@@ -1,15 +1,19 @@
 module Main (main) where
 
-import Network.Wai.Handler.Warp
-
-import qualified Data.Text as T
-import qualified Data.Text.Encoding as T
 import GL
-import System.Environment (getArgs)
+import Network.Wai.Handler.Warp (run)
+import System.Environment (
+    getArgs,
+    getEnv,
+ )
 
 main :: IO ()
 main = do
     args <- getArgs
-    case args of
-        [connStr] -> run 8080 (webhookApplication (T.encodeUtf8 . T.pack $ connStr))
-        _ -> error "Usage: gitlab-webhook pgconnstring"
+    envStrApiToken <- getEnv "GL_API_TOKEN"
+    case envStrApiToken of
+        "" -> error "please set the GL_API_TOKEN environment variable to a valid token string"
+        strApiToken ->
+            case args of
+                [connStr] -> run 8080 (webhookApplication connStr strApiToken)
+                _ -> error "Usage: gitlab-webhook pgconnstring"

@@ -1,0 +1,119 @@
+[0KRunning with gitlab-runner 15.5.1 (v15.5.1)[0;m
+[0K  on x86_64-linux-4.zw3rk_x86_64-linux-4_db038e4e1623 Bfz8CiQn[0;m
+section_start:1675046260:resolve_secrets[0K[0K[36;1mResolving secrets[0;m[0;m
+section_end:1675046260:resolve_secrets[0Ksection_start:1675046260:prepare_executor[0K[0K[36;1mPreparing the "docker" executor[0;m[0;m
+[0KUsing Docker executor with image nixos/nix:2.3.12 ...[0;m
+[0KPulling docker image nixos/nix:2.3.12 ...[0;m
+[0KUsing docker image sha256:a79898142fb1c53a715185e2d05b0d5a4bdacbe7cd9cc7a9149293d5b1793276 for nixos/nix:2.3.12 with digest nixos/nix@sha256:d9bb3b85b846eb0b6c5204e0d76639dff72c7871fb68f5d4edcfbb727f8a5653 ...[0;m
+section_end:1675046262:prepare_executor[0Ksection_start:1675046262:prepare_script[0K[0K[36;1mPreparing environment[0;m[0;m
+Running on runner-bfz8ciqn-project-78-concurrent-0 via x86_64-linux-4...
+section_end:1675046262:prepare_script[0Ksection_start:1675046262:get_sources[0K[0K[36;1mGetting source from Git repository[0;m[0;m
+[32;1mFetching changes...[0;m
+Initialized empty Git repository in /builds/ghc/head.hackage/.git/
+[32;1mCreated fresh repository.[0;m
+[32;1mChecking out a5c4468a as upstream-testing...[0;m
+
+[32;1mUpdating/initializing submodules...[0;m
+Submodule 'tests/bytestring' (https://github.com/haskell/bytestring.git) registered for path 'tests/bytestring'
+Submodule 'tests/containers' (https://github.com/haskell/containers.git) registered for path 'tests/containers'
+Submodule 'tests/ghc-debug' (https://gitlab.haskell.org/ghc/ghc-debug.git) registered for path 'tests/ghc-debug'
+Submodule 'tests/text' (https://github.com/haskell/text.git) registered for path 'tests/text'
+Synchronizing submodule url for 'tests/bytestring'
+Synchronizing submodule url for 'tests/containers'
+Synchronizing submodule url for 'tests/ghc-debug'
+Synchronizing submodule url for 'tests/text'
+Cloning into '/builds/ghc/head.hackage/tests/bytestring'...
+Cloning into '/builds/ghc/head.hackage/tests/containers'...
+Cloning into '/builds/ghc/head.hackage/tests/ghc-debug'...
+Cloning into '/builds/ghc/head.hackage/tests/text'...
+Submodule path 'tests/bytestring': checked out '0eb7a6a0c1aa736f46931460270689bf7c831cae'
+Submodule path 'tests/containers': checked out 'fbafcf704f0febd9ddac84dbe00ae3787af43550'
+Submodule path 'tests/ghc-debug': checked out '0c1bdd959e009a56a502696b8ec25c0836d0e2e9'
+Submodule path 'tests/text': checked out '13ac9711bc2cc0afa5f014e94afe2782bb75e8dc'
+Entering 'tests/bytestring'
+Entering 'tests/containers'
+Entering 'tests/ghc-debug'
+Entering 'tests/text'
+Entering 'tests/bytestring'
+Entering 'tests/containers'
+Entering 'tests/ghc-debug'
+Entering 'tests/text'
+section_end:1675046269:get_sources[0Ksection_start:1675046269:restore_cache[0K[0K[36;1mRestoring cache[0;m[0;m
+[32;1mChecking cache for build-HEAD-non_protected...[0;m
+No URL provided, cache will not be downloaded from shared cache server. Instead a local version of cache will be extracted.[0;m 
+[32;1mSuccessfully extracted cache[0;m
+section_end:1675046269:restore_cache[0Ksection_start:1675046269:step_script[0K[0K[36;1mExecuting "step_script" stage of the job script[0;m[0;m
+[0KUsing docker image sha256:a79898142fb1c53a715185e2d05b0d5a4bdacbe7cd9cc7a9149293d5b1793276 for nixos/nix:2.3.12 with digest nixos/nix@sha256:d9bb3b85b846eb0b6c5204e0d76639dff72c7871fb68f5d4edcfbb727f8a5653 ...[0;m
+[32;1m$ if [ -e store.nar ]; then # collapsed multi-line command[0;m
+No cache found
+[32;1m$ GHC_TARBALL=$(nix run -f ./ci -c discover_tarball.sh)[0;m
+builder for '/nix/store/bz98i00hwfg4a4qn4z4pl2kjhg6s013l-base-compat-0.12.2.drv' failed due to signal 9 (Killed); last 10 log lines:
+  Warning: 'TypeRep' is ambiguous. It is defined
+      * at src/Type/Reflection/Compat.hs:79:1
+      * in ‘Data.Typeable.Internal’
+      You may be able to disambiguate the identifier by qualifying it or
+      by specifying the type/value namespace explicitly.
+      Defaulting to the one defined at src/Type/Reflection/Compat.hs:79:1
+    75% (  3 /  4) in 'Type.Reflection.Compat'
+    Missing documentation for:
+      Module header
+   100% (  2 /  2) in 'Type.Reflection.Compat.Repl'
+cannot build derivation '/nix/store/sl17kkcbgbp0si75bbby609iah1hxnjf-aeson-2.0.3.0.drv': 1 dependencies couldn't be built
+cannot build derivation '/nix/store/fspqpnidkq8x6yn19zpa564sd6d0wxmc-cabal-plan-0.7.2.1.drv': 1 dependencies couldn't be built
+cannot build derivation '/nix/store/djyaj6865bx4fkmczyirqafiyr15fanc-doctest-0.18.2.drv': 1 dependencies couldn't be built
+cannot build derivation '/nix/store/97hgmbqii0dgws6h7c3540nr9b4dmlz1-mockery-0.3.5.drv': 1 dependencies couldn't be built
+cannot build derivation '/nix/store/i4fmwwlarfvasg98hjvk7r7k72i5kxk7-temporary-1.3.drv': 1 dependencies couldn't be built
+cannot build derivation '/nix/store/b51bm70dis5fl15pq2mlzmvdaqsf313x-th-compat-0.1.4.drv': 1 dependencies couldn't be built
+cannot build derivation '/nix/store/55vhzjh7jzl3v1wx9c3dazv4dvy8ih0x-time-compat-1.9.6.1.drv': 1 dependencies couldn't be built
+cannot build derivation '/nix/store/f44a10ir7n926nk8n9yc2p8781fyrdi2-head-hackage-ci-0.1.0.0.drv': 1 dependencies couldn't be built
+cannot build derivation '/nix/store/58340zrhljlrrzzyz3ry74r4jq3i5qs6-hspec-discover-2.8.5.drv': 1 dependencies couldn't be built
+cannot build derivation '/nix/store/3iyx812nw90va9z4zm9rd5z4qxcj27i2-lukko-0.1.1.3.drv': 1 dependencies couldn't be built
+cannot build derivation '/nix/store/14m9s8yw6wawbs315k8h5an0r2y2jq1a-network-uri-2.6.4.1.drv': 1 dependencies couldn't be built
+cannot build derivation '/nix/store/qfb584qsk1w3xdgy3k7ms6xn6bbj6fjq-repo.drv': 1 dependencies couldn't be built
+error: build of '/nix/store/qfb584qsk1w3xdgy3k7ms6xn6bbj6fjq-repo.drv' failed
+section_end:1675046355:step_script[0Ksection_start:1675046355:after_script[0K[0K[36;1mRunning after_script[0;m[0;m
+[32;1mRunning after script...[0;m
+[32;1m$ ls -lh[0;m
+total 65K    
+-rw-rw-rw-    1 root     root        7.7K Jan 30 02:37 README.md
+drwxrwxrwx    3 root     root          24 Jan 30 02:37 ci
+-rw-rw-rw-    1 root     root        3.9K Jan 30 02:37 default.nix
+-rw-rw-rw-    1 root     root         648 Jan 30 02:37 ghc-from-source.nix
+-rw-rw-rw-    1 root     root         510 Jan 30 02:37 ghc-prerelease.nix
+-rw-rw-rw-    1 root     root        1.1K Jan 30 02:37 http-api-data.nix
+drwxrwxrwx    2 root     root          75 Jan 30 02:37 patches
+-rwxrwxrwx    1 root     root        2.1K Jan 30 02:37 run-ci
+drwxrwxrwx    2 root     root          11 Jan 30 02:37 scripts
+drwxrwxrwx    7 root     root           7 Jan 30 02:37 tests
+[32;1m$ nix run -f ./ci -c \ # collapsed multi-line command[0;m
+builder for '/nix/store/gyq28wydmind76km15z3dxg2j83fdm8r-basement-0.0.15.drv' failed due to signal 9 (Killed); last 10 log lines:
+  setupCompilerEnvironmentPhase
+  Build with /nix/store/n6wixip55s0wa25k07367byp529a9gg4-ghc-9.2.5.
+  unpacking sources
+  unpacking source archive /nix/store/v19257c3j9v8jqc94llzmyb26jxnfxqn-basement-0.0.15.tar.gz
+  source root is basement-0.0.15
+  setting SOURCE_DATE_EPOCH to timestamp 1660883647 of file basement-0.0.15/basement.cabal
+  patching sources
+  compileBuildDriverPhase
+  setupCompileFlags: -package-db=/tmp/nix-build-basement-0.0.15.drv-0/tmp.vSoi7CAFPE/setup-package.conf.d -j16 +RTS -A64M -RTS -threaded -rtsopts
+  [1 of 1] Compiling Main             ( Setup.hs, /tmp/nix-build-basement-0.0.15.drv-0/tmp.vSoi7CAFPE/Main.o )
+cannot build derivation '/nix/store/q8sgl58na7d6kx82q421gp4kli6al9sk-connection-0.3.1.drv': 1 dependencies couldn't be built
+cannot build derivation '/nix/store/y4944fah1i057qay3x4i1qsfl792cr79-cryptonite-0.30.drv': 1 dependencies couldn't be built
+cannot build derivation '/nix/store/grk4mr4djfsqhhxdwz3d5qha3p0mwa3d-memory-0.16.0.drv': 1 dependencies couldn't be built
+cannot build derivation '/nix/store/80d2qa2x1cbs7hvjck2z4y00f11jz6n6-pem-0.2.4.drv': 1 dependencies couldn't be built
+cannot build derivation '/nix/store/mmmz2lj28va12lhlswxz11301hsdbsvv-wreq-0.5.3.3.drv': 1 dependencies couldn't be built
+cannot build derivation '/nix/store/f44a10ir7n926nk8n9yc2p8781fyrdi2-head-hackage-ci-0.1.0.0.drv': 1 dependencies couldn't be built
+cannot build derivation '/nix/store/qfb584qsk1w3xdgy3k7ms6xn6bbj6fjq-repo.drv': 1 dependencies couldn't be built
+error: build of '/nix/store/qfb584qsk1w3xdgy3k7ms6xn6bbj6fjq-repo.drv' failed
+section_end:1675046375:after_script[0Ksection_start:1675046375:archive_cache_on_failure[0K[0K[36;1mSaving cache for failed job[0;m[0;m
+[32;1mCreating cache build-HEAD-non_protected...[0;m
+[0;33mWARNING: store.nar: no matching files. Ensure that the artifact path is relative to the working directory[0;m 
+Archive is up to date!                            [0;m 
+[32;1mCreated cache[0;m
+section_end:1675046375:archive_cache_on_failure[0Ksection_start:1675046375:upload_artifacts_on_failure[0K[0K[36;1mUploading artifacts for failed job[0;m[0;m
+[32;1mUploading artifacts...[0;m
+[0;33mWARNING: results.tar.xz: no matching files. Ensure that the artifact path is relative to the working directory[0;m 
+[31;1mERROR: No files to upload                         [0;m 
+section_end:1675046375:upload_artifacts_on_failure[0Ksection_start:1675046375:cleanup_file_variables[0K[0K[36;1mCleaning up project directory and file based variables[0;m[0;m
+section_end:1675046375:cleanup_file_variables[0K[31;1mERROR: Job failed: exit code 100
+[0;m

@@ -29,6 +29,7 @@ dependencies:
 - bytestring
 - containers
 - http-client
+- modern-uri
 - postgresql-simple
 - regex-tdfa
 - req
@@ -36,6 +37,7 @@ dependencies:
 - servant-client
 - servant-server
 - text
+- text-show
 - wai
 - warp
 
