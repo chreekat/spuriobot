@@ -195,7 +195,7 @@ grepForFailures =
             )
         ,
             ( "Failed to connect to gitlab.haskell.org"
-            , ("GitLab connection failure", "gitlab_connect")
+            , ("GitLab connection failure", "connect_gitlab")
             )
         ,
             ( "No space left on device"
