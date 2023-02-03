@@ -1,5 +1,4 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeOperators #-}
 
@@ -149,23 +148,26 @@ instance ToJSON GLBuildEvent where
 
 fetchJobLogs :: GLApi.Token -> GLApi.JobWebURL -> IO Text
 fetchJobLogs apiToken jobWebURL = do
-    -- Using pre-encoded URLs in Req is like pulling teeth
-    -- We can't even chain the Maybes with <$> (or I couldn't, anyway)
-    -- Hence these non-exhaustive pattern matches
-    let Just uri = mkURI (jobWebURL <> "/raw")
-        Just (uri', _) = useHttpsURI uri
-    runReq defaultHttpConfig $ do
-        -- TODO handle redirect to login which is gitlab's way of saying 404
-        -- if re.search('users/sign_in$', resp.url):
-        response <-
-            req
-                R.GET
-                uri'
-                NoReqBody
-                bsResponse
-                (headerRedacted "PRIVATE-TOKEN" apiToken)
+    let mbUri = do
+            uri <- mkURI (jobWebURL <> "/raw")
+            (uri', _) <- useHttpsURI uri
+            pure uri'
+    case mbUri of
+        -- this error will only terminate the forked processJob thread, so the
+        -- main process should keep listening and handling requests
+        Nothing -> error $ "GL API returned an invalid url: " <> T.unpack jobWebURL
+        Just uri -> runReq defaultHttpConfig $ do
+            -- TODO handle redirect to login which is gitlab's way of saying 404
+            -- if re.search('users/sign_in$', resp.url):
+            response <-
+                req
+                    R.GET
+                    uri
+                    NoReqBody
+                    bsResponse
+                    (headerRedacted "PRIVATE-TOKEN" apiToken)
 
-        liftIO . pure . decodeUtf8 . responseBody $ response
+            liftIO . pure . decodeUtf8 . responseBody $ response
 
 -- the code that we inject into the database
 type FailureErrorCode = Text
