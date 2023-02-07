@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
@@ -87,15 +88,17 @@ instance FromJSON Job where
         <*> v .: "created_at"
         <*> v .: "web_url"
 
-jobsAPI :: Project -> URI
-jobsAPI (projectId -> i) = fromJust $ mkURI $
+jobsAPI :: Project -> Maybe Int -> URI
+jobsAPI (projectId -> i) page = fromJust $ mkURI $
     "https://gitlab.haskell.org/api/v4/projects/"
     <> T.pack (show i)
     <> "/jobs?scope%5B%5D=failed&scope%5b%5d=success&per_page=100"
+    <> maybe "" (\p -> "&page=" <> T.pack (show p)) page
 
 data JobsResult
     = WithMore URI [Job]
     | NoMore [Job]
+    | TooYoung URI
     deriving (Eq, Show)
 
 
@@ -106,34 +109,30 @@ api uri key =
 
 -- | Get a list of jobs in a single query. Includes info about whether we should
 -- continue.
-queryJobs key minAge jobUrl connVar = do
+fetchJobs key (minDate, maxDate) jobUrl connVar = do
     resp <- api jobUrl key
 
     nextLink <- head <$> responseLinks "rel" "next" resp
     let jobs = responseBody resp
 
-    -- Check if we're still in the age range
-    let inAgeRange j = createdAt j > minAge
+    let (msg, res) = f jobs nextLink where
+        -- Check if we're still in the age range
+        tooYoung j = createdAt j > maxDate
+        tooOld j = createdAt j < minDate
+        f jobs link | all tooYoung jobs = ("Too young", TooYoung link)
+                    | all tooOld jobs = ("Too old", NoMore jobs)
+                    | otherwise = ("Found jobs", WithMore link jobs)
+    logg msg
+    pure res
 
-    -- And that we are still seeing new jobs
-    [Only seenCount] <- bracketDB "new jobs?" connVar $ \conn -> do
-        execute_ conn "create temp table if not exists fetched_jobs (job_id primary key) without rowid"
-        execute_ conn "delete from fetched_jobs"
-        executeMany conn "insert into fetched_jobs (job_id) values (?)" (map (Only . jobId) jobs)
-        query_ conn "select count(*) from job j join fetched_jobs f on f.job_id = j.job_id"
-    let stillNewJobs = length jobs > seenCount
-
-    pure $ if all inAgeRange jobs && stillNewJobs
-        then WithMore nextLink jobs
-        else NoMore jobs
-
--- | Get all jobs later than a given age.
-getJobs key minAge jobUrl connVar = do
+-- | Get all jobs withen a given age range.
+getJobs key dateRange jobUrl connVar = do
     logg $ "Get " <> (T.encodeUtf8 (render jobUrl))
-    res <- lift $ queryJobs key minAge jobUrl connVar
+    res <- lift $ fetchJobs key dateRange jobUrl connVar
     case res of
         NoMore jobs -> pure jobs
-        WithMore nextUrl jobs -> pure jobs <|> getJobs key minAge nextUrl connVar
+        WithMore nextUrl jobs -> pure jobs <|> getJobs key dateRange nextUrl connVar
+        TooYoung nextUrl -> getJobs key dateRange nextUrl connVar
 
 data Trace = Trace
     { tid :: Int
@@ -191,7 +190,7 @@ clearStagedJobs key connVar = do
     parMapM (insertJob key connVar) jobs
 
 -- | Fetch jobs and dump them in the job table
-stageJobs key connVar lastMonth projURL = do
+stageJobs key connVar dateRange projURL = do
     logg "Staging jobs"
     runListT $ do
         j <- getJobs key dateRange projURL connVar
@@ -220,16 +219,23 @@ main = do
     now <- getCurrentTime
     let lastMonth = addUTCTime (-30 * nominalDay) now
     args <- getArgs
-    let cutoffDate = fromMaybe lastMonth $
+
+    -- Bang! Die early if unable to parse args.
+    let !earliest = fromMaybe lastMonth $
             case args of
-                [userDate] -> iso8601ParseM userDate
+                (d:_) -> iso8601ParseM d <|> error ("Could not parse date " <> d)
+                [] -> Nothing
+        !latest = fromMaybe now $
+            case args of
+                (_:d:_) -> iso8601ParseM d <|> error ("Could not parse date " <> d)
                 _ -> Nothing
 
+        dateRange = (earliest, latest)
 
     key <- BS.pack <$> getEnv "GIT_PRIVATE_TOKEN"
 
     initDatabase connVar
 
     forM_ projects $ \proj -> do
-        stageJobs key connVar cutoffDate (jobsAPI proj)
+        stageJobs key connVar dateRange (jobsAPI proj Nothing)
     runParIO (clearStagedJobs key connVar)
