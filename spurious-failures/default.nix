@@ -18,12 +18,16 @@ let
 
     localSrc = pkgs.lib.cleanSource;
 
-    extensions = self: super: {
-      spurious-failures =
-        self.callCabal2nix
-          "spurious-failures"
-          (localSrc ./.)
-          {};
+    customizedDeps = self: super: {
+      # Need dat generated columns yo
+      direct-sqlite =
+        self.callHackageDirect {
+          pkg = "direct-sqlite";
+          ver = "2.3.27";
+          sha256 = "sha256-N8KJ2spJJEnbHGj+MsygUT+mZ4sQA6I5xQhAEMSQHHE=";
+      } {};
+
+      # responseLinks
       req =
         h.doJailbreak (self.callCabal2nix
           "req"
@@ -35,6 +39,17 @@ let
           })
           {});
     };
+
+    ownPackages = self: super: {
+      spurious-failures =
+        self.callCabal2nix
+          "spurious-failures"
+          (localSrc ./.)
+          {};
+    };
+
+    extensions = self: super:
+      customizedDeps self super // ownPackages self super;
 
 in {
   inherit (hp) spurious-failures;
