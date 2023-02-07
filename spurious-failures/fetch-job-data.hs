@@ -55,8 +55,11 @@ data Project = Project { name :: String, projectId :: Int } deriving (Eq, Show)
 projects :: [Project]
 projects =
     [ Project "ghc/ghc" 1
-    , Project "ghc/head.hackage" 78
-    , Project "ghc/ghc-debug" 798
+    -- For debugging
+    -- , Project "ghc/head.hackage" 78
+    -- , Project "ghc/ghc-debug" 798
+    -- , Project "haskell/haskell-language-server" 1180
+    -- , Project "ghc/ci-images" 149
     ]
 
 -- | The elements of a GitLab REST API Job entity we care about
