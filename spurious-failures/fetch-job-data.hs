@@ -212,9 +212,12 @@ initDatabase connVar = do
 
 main = do
     connVar <- atomically . newTMVar =<< open "jobs.db"
+    {-
+     - I'm not sure I know what I'm doing with this, so I'll stop using it.
     bracketDB "set pragmas" connVar $ \conn -> do
         execute_ conn "PRAGMA mmap_size=6442450944" -- (6 GiB)
         execute_ conn "PRAGMA journal_mode=wal"
+    -}
 
     now <- getCurrentTime
     let lastMonth = addUTCTime (-30 * nominalDay) now
