@@ -19,7 +19,7 @@ main = do
     let values = map stringify rows
     putStrLn "begin; insert into ci_failure (job_id, type, job_date, web_url, runner_id) values" 
     putStrLn $ intercalate ",\n" values
-    putStrLn "on conflict (job_id, type) do update set runner_id = excluded.runner_id where ci_failure.runner_id is null; commit"
+    putStrLn "on conflict do nothing; commit"
 
 
 stringify :: Entry -> String
