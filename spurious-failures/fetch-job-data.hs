@@ -65,31 +65,16 @@ projects =
 -- | The elements of a GitLab REST API Job entity we care about
 data Job = Job
     { jobId :: Int
-    , jobProjectId :: Int
-    , commitId :: Text
-    , pipelineId :: Int
-    , runnerId :: Maybe Int
-    , arch :: Text
-    , pipelineSource :: Text
+    , jobBlob :: Text
     , createdAt :: UTCTime
     , webUrl :: Text
     } deriving (Eq, Show)
 
 instance ToRow Job where
-    toRow (Job j proj c pip r a ps ct wu) =
-        toRow (j, proj, c, pip, r, a, ps, ct, wu)
+    toRow (Job j blob _ _) = toRow (j, blob)
 
 instance FromRow Job where
-    fromRow = Job
-        <$> field
-        <*> field
-        <*> field
-        <*> field
-        <*> field
-        <*> field
-        <*> field
-        <*> field
-        <*> field
+    fromRow = Job <$> field <*> field <*> field <*> field
 
 v .:: key = \subkey -> do
     subobj <- v .: (fromString key)
@@ -98,13 +83,7 @@ v .:: key = \subkey -> do
 instance FromJSON Job where
     parseJSON = withObject "Job" $ \v -> Job
         <$> v .: "id"
-        <*> (v .:: "pipeline") "project_id"
-        <*> (v .:: "commit") "id"
-        <*> (v .:: "pipeline") "id"
-        <*> ((v .:: "runner") "id"
-            <|> pure Nothing)
-        <*> (T.intercalate "," <$> v .: "tag_list")
-        <*> (v .:: "pipeline") "source"
+        <*> pure (T.decodeUtf8 (toStrict (encode v)))
         <*> v .: "created_at"
         <*> v .: "web_url"
 
@@ -187,7 +166,7 @@ bstr = T.encodeUtf8 . T.pack
 insertJob key connVar job = do
     t <- getTrace key job
     bracketDB "insert trace" connVar $ \conn ->
-        execute conn "insert into job_trace (job_id, trace) values (?, ?)" t
+        execute conn "insert into job_trace (rowid, trace) values (?, ?)" t
 
 logg :: MonadIO m => BS.ByteString -> m ()
 logg = liftIO . BS.hPutStrLn stderr
@@ -202,10 +181,11 @@ clearStagedJobs key connVar = do
     logg "Clearing staged jobs"
     jobs <- bracketDB "jobs with no traces" connVar
         $ \conn -> query_ conn [sql|
-            select j.* from job j
+            select j.job_id, j.json, j.created_at, j.web_url
+            from job j
             left join job_trace t
-            on j.job_id = t.job_id
-            where t.job_id is null
+            on j.job_id = t.rowid
+            where t.rowid is null
         |]
     logg ("CLEAR " <> (bstr (show (length jobs))) <> " JOBS")
     parMapM (insertJob key connVar) jobs
@@ -214,8 +194,22 @@ clearStagedJobs key connVar = do
 stageJobs key connVar lastMonth projURL = do
     logg "Staging jobs"
     runListT $ do
-        j <- getJobs key lastMonth projURL connVar
-        bracketDB "insert jobs" connVar $ \conn -> executeMany conn "insert into job values (?,?,?,?,?,?,?,?,?) on conflict do nothing" j
+        j <- getJobs key dateRange projURL connVar
+        case j of
+            [] -> pure ()
+            _ -> bracketDB "insert jobs" connVar $ \conn -> executeMany conn "insert into job values (?,?) on conflict do nothing" j
+
+initDatabase connVar = do
+    bracketDB "init database" connVar $ \conn -> execute_ conn [sql|
+        create table if not exists job (
+            job_id int primary key,
+            json text not null,
+            created_at text generated always as (json ->> '$.created_at'),
+            web_url text generated always as (json ->> '$.web_url')
+        )
+        without rowid;
+        create virtual table if not exists job_trace using fts5(trace, content='');
+    |]
 
 main = do
     connVar <- atomically . newTMVar =<< open "jobs.db"
@@ -234,7 +228,8 @@ main = do
 
     key <- BS.pack <$> getEnv "GIT_PRIVATE_TOKEN"
 
-    runParIO (clearStagedJobs key connVar)
+    initDatabase connVar
+
     forM_ projects $ \proj -> do
         stageJobs key connVar cutoffDate (jobsAPI proj)
     runParIO (clearStagedJobs key connVar)
