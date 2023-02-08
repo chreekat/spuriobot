@@ -19,13 +19,13 @@ The tool can fetch jobs from a date range. The default range is the last month.
 *Fetch all data since 1 November 2022*:
 
 ```
-./result/bin/fetch-job-data 2022-11-01T00:00:00Z
+./result/bin/fetch-job-data 2022-11-01T00:00:00+00:00
 ```
 
 *Fetch all data since last Monday*:
 
 ```
-./result/bin/fetch-job-data "$(date -Isec  -d 'last Monday')"
+./result/bin/fetch-job-data "$(date -Isec -d 'last Monday')"
 ```
 
 ### Usage Notes
