@@ -224,11 +224,11 @@ main = do
     args <- getArgs
 
     -- Bang! Die early if unable to parse args.
-    let !earliest = fromMaybe lastMonth $
+    let !earliest = maybe lastMonth zonedTimeToUTC $
             case args of
                 (d:_) -> iso8601ParseM d <|> error ("Could not parse date " <> d)
                 [] -> Nothing
-        !latest = fromMaybe now $
+        !latest = maybe now zonedTimeToUTC $
             case args of
                 (_:d:_) -> iso8601ParseM d <|> error ("Could not parse date " <> d)
                 _ -> Nothing
