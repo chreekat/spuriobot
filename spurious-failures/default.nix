@@ -16,7 +16,10 @@ let
     h = pkgs.haskell.lib;
     hp = pkgs.haskellPackages;
 
-    localSrc = pkgs.lib.cleanSource;
+    localSrc = pkgs.lib.cleanSourceWith {
+      filter = name: _type: baseNameOf (toString name) != "jobs.db";
+      src = pkgs.lib.cleanSource ./.;
+    };
 
     customizedDeps = self: super: {
       # Need dat generated columns yo
@@ -44,7 +47,7 @@ let
       spurious-failures =
         self.callCabal2nix
           "spurious-failures"
-          (localSrc ./.)
+          localSrc
           {};
     };
 
