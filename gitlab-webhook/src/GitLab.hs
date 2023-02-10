@@ -5,8 +5,8 @@
 module GitLab (
     GitLabBuildEvent (..),
     grepForFailures,
-    postGitLabBuildEvent,
     webhookApplication,
+    webhookAPI,
 ) where
 
 import Control.Concurrent (forkIO)
@@ -54,10 +54,6 @@ import Servant (
     serve,
     (:>),
  )
-import Servant.Client (
-    ClientM,
-    client,
- )
 import Text.Regex.TDFA (
     (=~),
  )
@@ -102,12 +98,6 @@ webhookAPI = Proxy
 webhookApplication :: ByteString -> ByteString -> Application
 webhookApplication connStr strApiToken =
     serve webhookAPI $ webhookServer connStr strApiToken
-
--- for testing the webhook
--- This isn't a great test, because we are only sending a subset of the fields
--- over. However it does test that the webhook server works at all.
-postGitLabBuildEvent :: GitLabBuildEvent -> ClientM ()
-postGitLabBuildEvent = client webhookAPI
 
 -- BuildEvent is what the webhook receives
 data GitLabBuildEvent = GitLabBuildEvent

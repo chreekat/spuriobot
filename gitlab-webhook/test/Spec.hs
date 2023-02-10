@@ -14,10 +14,29 @@ import Network.HTTP.Client (
     newManager,
  )
 import Network.Wai.Handler.Warp (run)
-import Servant.Client
-import Test.Hspec
+import Servant.Client (
+    BaseUrl (..),
+    ClientM,
+    Scheme (Http),
+    client,
+    mkClientEnv,
+    runClientM,
+ )
+import Test.Hspec (
+    describe,
+    hspec,
+    it,
+    shouldBe,
+    shouldSatisfy,
+ )
 
 import GitLab
+
+-- for testing the webhook
+-- This isn't a great test, because we are only sending a subset of the fields
+-- over. However it does test that the webhook server works at all.
+postGitLabBuildEvent :: GitLabBuildEvent -> ClientM ()
+postGitLabBuildEvent = client webhookAPI
 
 main :: IO ()
 main = hspec $ do
