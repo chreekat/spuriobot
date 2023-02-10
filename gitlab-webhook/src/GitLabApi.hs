@@ -1,4 +1,4 @@
-module GLApi (
+module GitLabApi (
     JobId,
     JobInfo (..),
     JobWebURL,

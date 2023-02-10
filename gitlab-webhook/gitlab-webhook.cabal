@@ -25,8 +25,8 @@ source-repository head
 
 library
   exposed-modules:
-      GL
-      GLApi
+      GitLab
+      GitLabApi
   other-modules:
       Paths_gitlab_webhook
   hs-source-dirs:

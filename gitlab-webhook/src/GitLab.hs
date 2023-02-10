@@ -2,10 +2,10 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeOperators #-}
 
-module GL (
-    GLBuildEvent (..),
+module GitLab (
+    GitLabBuildEvent (..),
     grepForFailures,
-    postGLBuildEvent,
+    postGitLabBuildEvent,
     webhookApplication,
 ) where
 
@@ -66,7 +66,7 @@ import Text.Regex.TDFA (
 import Text.URI (mkURI)
 import TextShow (showt)
 
-import GLApi
+import GitLabApi
 
 -- overall flow of the application:
 --
@@ -84,9 +84,9 @@ import GLApi
 -- deployable via nix
 
 type WebHookAPI =
-    ReqBody '[JSON] GLBuildEvent :> Post '[JSON] ()
+    ReqBody '[JSON] GitLabBuildEvent :> Post '[JSON] ()
 
-webhookServer :: ByteString -> GLApi.Token -> Server WebHookAPI
+webhookServer :: ByteString -> GitLabApi.Token -> Server WebHookAPI
 webhookServer connString apiToken glBuildEvent = do
     -- TODO proper logging
     liftIO $ print glBuildEvent
@@ -111,11 +111,11 @@ webhookApplication connStr strApiToken =
 -- for testing the webhook
 -- This isn't a great test, because we are only sending a subset of the fields
 -- over. However it does test that the webhook server works at all.
-postGLBuildEvent :: GLBuildEvent -> ClientM ()
-postGLBuildEvent = client webhookAPI
+postGitLabBuildEvent :: GitLabBuildEvent -> ClientM ()
+postGitLabBuildEvent = client webhookAPI
 
 -- BuildEvent is what the webhook receives
-data GLBuildEvent = GLBuildEvent
+data GitLabBuildEvent = GitLabBuildEvent
     { glbRef :: String
     , glbBuildId :: Int
     , glbBuildName :: String
@@ -125,9 +125,9 @@ data GLBuildEvent = GLBuildEvent
     }
     deriving (Show, Ord, Eq)
 
-instance FromJSON GLBuildEvent where
-    parseJSON = withObject "GLBuildEvent" $ \v ->
-        GLBuildEvent
+instance FromJSON GitLabBuildEvent where
+    parseJSON = withObject "GitLabBuildEvent" $ \v ->
+        GitLabBuildEvent
             <$> v .: "ref"
             <*> v .: "build_id"
             <*> v .: "build_name"
@@ -135,7 +135,7 @@ instance FromJSON GLBuildEvent where
             <*> v .: "build_failure_reason"
             <*> v .: "project_id"
 
-instance ToJSON GLBuildEvent where
+instance ToJSON GitLabBuildEvent where
     toJSON x =
         object
             [ "ref" .= glbRef x
@@ -146,7 +146,7 @@ instance ToJSON GLBuildEvent where
             , "project_id" .= glbProjectId x
             ]
 
-fetchJobLogs :: GLApi.Token -> GLApi.JobWebURL -> IO Text
+fetchJobLogs :: GitLabApi.Token -> GitLabApi.JobWebURL -> IO Text
 fetchJobLogs apiToken jobWebURL = do
     let mbUri = do
             uri <- mkURI (jobWebURL <> "/raw")
@@ -155,7 +155,7 @@ fetchJobLogs apiToken jobWebURL = do
     case mbUri of
         -- this error will only terminate the forked processJob thread, so the
         -- main process should keep listening and handling requests
-        Nothing -> error $ "GL API returned an invalid url: " <> T.unpack jobWebURL
+        Nothing -> error $ "GitLab API returned an invalid url: " <> T.unpack jobWebURL
         Just uri -> runReq defaultHttpConfig $ do
             -- TODO handle redirect to login which is gitlab's way of saying 404
             -- if re.search('users/sign_in$', resp.url):
@@ -222,7 +222,7 @@ grepForFailures =
         ]
 
 -- TODO real logging
-logFailures :: GLApi.JobId -> Set Failure -> IO ()
+logFailures :: GitLabApi.JobId -> Set Failure -> IO ()
 logFailures jobId failures =
     forM_
         (S.toList failures)
@@ -248,8 +248,8 @@ logFailures jobId failures =
 --            ]
 --    values = map (\(code, (jobId, _)) -> (jobId, code, jobDate, jobWebUrl, jobRunnerId)) failures
 
-processJob :: ByteString -> GLApi.Token -> GLBuildEvent -> IO ()
-processJob _connString apiToken GLBuildEvent{..} = do
+processJob :: ByteString -> GitLabApi.Token -> GitLabBuildEvent -> IO ()
+processJob _connString apiToken GitLabBuildEvent{..} = do
     jobInfo <- fetchJobInfo apiToken glbProjectId glbBuildId
     logs <- fetchJobLogs apiToken (webUrl jobInfo)
     let failures = grepForFailures logs

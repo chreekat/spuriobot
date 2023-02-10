@@ -1,6 +1,6 @@
 module Main (main) where
 
-import GL
+import GitLab
 import Network.Wai.Handler.Warp (run)
 import System.Environment (
     getArgs,
@@ -10,9 +10,9 @@ import System.Environment (
 main :: IO ()
 main = do
     args <- getArgs
-    envStrApiToken <- getEnv "GL_API_TOKEN"
+    envStrApiToken <- getEnv "GITLAB_API_TOKEN"
     case envStrApiToken of
-        "" -> error "please set the GL_API_TOKEN environment variable to a valid token string"
+        "" -> error "please set the GITLAB_API_TOKEN environment variable to a valid token string"
         strApiToken ->
             case args of
                 [connStr] -> run 8080 (webhookApplication connStr strApiToken)
