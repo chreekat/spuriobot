@@ -9,8 +9,6 @@ module GitLab (
     webhookApplication,
 ) where
 
--- FIXME constrain imports
-
 import Control.Concurrent (forkIO)
 import Control.Monad (
     forM_,
@@ -33,7 +31,7 @@ import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Text.Encoding
+import Data.Text.Encoding (decodeUtf8)
 import qualified Data.Text.IO as T
 import Network.HTTP.Req (
     NoReqBody (..),
@@ -101,14 +99,9 @@ webhookServer connString apiToken glBuildEvent = do
 webhookAPI :: Proxy WebHookAPI
 webhookAPI = Proxy
 
-webhookApplication :: String -> String -> Application
+webhookApplication :: ByteString -> ByteString -> Application
 webhookApplication connStr strApiToken =
-    serve
-        webhookAPI
-        ( webhookServer
-            (encodeUtf8 . T.pack $ connStr)
-            (encodeUtf8 . T.pack $ strApiToken)
-        )
+    serve webhookAPI $ webhookServer connStr strApiToken
 
 -- for testing the webhook
 -- This isn't a great test, because we are only sending a subset of the fields
