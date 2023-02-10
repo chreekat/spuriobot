@@ -89,7 +89,9 @@ type WebHookAPI =
 webhookServer :: ByteString -> GitLabApi.Token -> Server WebHookAPI
 webhookServer connString apiToken glBuildEvent = do
     -- TODO proper logging
-    liftIO $ print glBuildEvent
+    -- Fork a thread to do the processing and immediately return a 'success' status
+    -- code to the caller; see the recommendations from GitLab documentation:
+    -- https://docs.gitlab.com/ee/user/project/integrations/webhooks.html#configure-your-webhook-receiver-endpoint
     liftIO . void . forkIO $
         processJob
             connString
