@@ -17,7 +17,7 @@ main = do
         "" -> error "please set the GITLAB_API_TOKEN environment variable to a valid token string"
         strApiToken ->
             case args of
-                [connStr] -> run 8080 $ webhookApplication (textEncode connStr) (textEncode strApiToken)
-                _ -> error "Usage: gitlab-webhook pgconnstring"
+                [] -> run 8080 $ webhookApplication (textEncode strApiToken)
+                _ -> error "Usage: gitlab-webhook"
   where
     textEncode = encodeUtf8 . T.pack

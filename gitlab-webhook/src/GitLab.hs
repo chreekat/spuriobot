@@ -80,24 +80,23 @@ import qualified GitLabApi
 type WebHookAPI =
     ReqBody '[JSON] GitLabBuildEvent :> Post '[JSON] ()
 
-webhookServer :: ByteString -> GitLabApi.Token -> Server WebHookAPI
-webhookServer connString apiToken glBuildEvent = do
+webhookServer :: GitLabApi.Token -> Server WebHookAPI
+webhookServer apiToken glBuildEvent = do
     -- TODO proper logging
     -- Fork a thread to do the processing and immediately return a 'success' status
     -- code to the caller; see the recommendations from GitLab documentation:
     -- https://docs.gitlab.com/ee/user/project/integrations/webhooks.html#configure-your-webhook-receiver-endpoint
     liftIO . void . forkIO $
         processJob
-            connString
             apiToken
             glBuildEvent
 
 webhookAPI :: Proxy WebHookAPI
 webhookAPI = Proxy
 
-webhookApplication :: ByteString -> ByteString -> Application
-webhookApplication connStr strApiToken =
-    serve webhookAPI $ webhookServer connStr strApiToken
+webhookApplication :: ByteString -> Application
+webhookApplication strApiToken =
+    serve webhookAPI $ webhookServer strApiToken
 
 -- BuildEvent is what the webhook receives
 data GitLabBuildEvent = GitLabBuildEvent
@@ -140,7 +139,7 @@ fetchJobLogs apiToken jobWebURL = do
     case mbUri of
         -- this error will only terminate the forked processJob thread, so the
         -- main process should keep listening and handling requests
-        Nothing -> error $ "GitLab API returned an invalid url: " <> T.unpack jobWebURL
+        Nothing -> error $ "Could not parse URL: " <> T.unpack jobWebURL
         Just uri -> runReq defaultHttpConfig $ do
             -- TODO handle redirect to login which is gitlab's way of saying 404
             -- if re.search('users/sign_in$', resp.url):
@@ -215,9 +214,9 @@ logFailures jobId failures =
             T.putStrLn $ "job " <> showt jobId <> ": " <> msg
         )
 
--- writeFailuresToDB :: ByteString -> String -> String -> String -> [Failure] -> IO ()
--- writeFailuresToDB connString jobDate jobWebUrl jobRunnerId failures = do
---    conn <- connectPostgreSQL connString
+-- writeFailuresToDB :: String -> String -> String -> [Failure] -> IO ()
+-- writeFailuresToDB jobDate jobWebUrl jobRunnerId failures = do
+--    conn <- connectPostgreSQLWithEnvArgs
 --    void $
 --        executeMany
 --            conn
@@ -233,12 +232,12 @@ logFailures jobId failures =
 --            ]
 --    values = map (\(code, (jobId, _)) -> (jobId, code, jobDate, jobWebUrl, jobRunnerId)) failures
 
-processJob :: ByteString -> GitLabApi.Token -> GitLabBuildEvent -> IO ()
-processJob _connString apiToken GitLabBuildEvent{..} = do
+processJob :: GitLabApi.Token -> GitLabBuildEvent -> IO ()
+processJob apiToken GitLabBuildEvent{..} = do
     jobInfo <- GitLabApi.fetchJobInfo apiToken glbProjectId glbBuildId
     logs <- fetchJobLogs apiToken (GitLabApi.webUrl jobInfo)
     let failures = grepForFailures logs
     logFailures glbBuildId failures
 
 -- TODO keep a persistent connection around rather than making a new one each time
--- writeFailuresToDB connString glJobDate glJobWebURL glJobRunnerId failures
+-- writeFailuresToDB glJobDate glJobWebURL glJobRunnerId failures
