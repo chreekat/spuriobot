@@ -1,24 +1,14 @@
 name:                gitlab-webhook
 version:             0.1.0.0
-github:              "githubuser/gitlab-webhook"
 license:             BSD3
-author:              "Author name here"
-maintainer:          "example@example.com"
-copyright:           "2023 Author name here"
+author:              "Chris Linton-Ford"
+copyright:           "2023 Chris Linton-Ford"
 
 extra-source-files:
 - README.md
 - CHANGELOG.md
 
-# TODO clean this up
-# Metadata used when publishing your package
-# synopsis:            Short description of your package
-# category:            Web
-
-# To avoid duplicated efforts in documentation and dealing with the
-# complications of embedding Haddock markup inside cabal files, it is
-# common to point users to the README.md file.
-description:         Please see the README on GitHub at <https://github.com/githubuser/gitlab-webhook#readme>
+description:         "Collect and report spurious CI failures by category"
 
 default-extensions:
 - OverloadedStrings
