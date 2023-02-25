@@ -60,7 +60,7 @@ import Text.Regex.TDFA (
 import Text.URI (mkURI)
 import TextShow (showt)
 
-import GitLabApi
+import qualified GitLabApi
 
 -- overall flow of the application:
 --
@@ -106,7 +106,7 @@ data GitLabBuildEvent = GitLabBuildEvent
     , glbBuildName :: String
     , glbBuildStatus :: String
     , glbBuildFailureReason :: String
-    , glbProjectId :: Int
+    , glbProjectId :: GitLabApi.ProjectId
     }
     deriving (Show, Ord, Eq)
 
@@ -118,7 +118,7 @@ instance FromJSON GitLabBuildEvent where
             <*> v .: "build_name"
             <*> v .: "build_status"
             <*> v .: "build_failure_reason"
-            <*> v .: "project_id"
+            <*> (GitLabApi.ProjectId <$> v .: "project_id")
 
 instance ToJSON GitLabBuildEvent where
     toJSON x =
@@ -128,7 +128,7 @@ instance ToJSON GitLabBuildEvent where
             , "build_name" .= glbBuildName x
             , "build_status" .= glbBuildStatus x
             , "build_failure_reason" .= glbBuildFailureReason x
-            , "project_id" .= glbProjectId x
+            , "project_id" .= GitLabApi.unProjectId (glbProjectId x)
             ]
 
 fetchJobLogs :: GitLabApi.Token -> GitLabApi.JobWebURL -> IO Text
@@ -235,8 +235,8 @@ logFailures jobId failures =
 
 processJob :: ByteString -> GitLabApi.Token -> GitLabBuildEvent -> IO ()
 processJob _connString apiToken GitLabBuildEvent{..} = do
-    jobInfo <- fetchJobInfo apiToken glbProjectId glbBuildId
-    logs <- fetchJobLogs apiToken (webUrl jobInfo)
+    jobInfo <- GitLabApi.fetchJobInfo apiToken glbProjectId glbBuildId
+    logs <- fetchJobLogs apiToken (GitLabApi.webUrl jobInfo)
     let failures = grepForFailures logs
     logFailures glbBuildId failures
 

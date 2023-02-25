@@ -2,7 +2,7 @@ module GitLabApi (
     JobId,
     JobInfo (..),
     JobWebURL,
-    ProjectId,
+    ProjectId (..),
     Token,
     fetchJobInfo,
 ) where
@@ -30,7 +30,7 @@ import Network.HTTP.Req (
 import qualified Network.HTTP.Req as R
 import TextShow (showt)
 
-type ProjectId = Int
+newtype ProjectId = ProjectId {unProjectId :: Int} deriving (Show, Ord, Eq)
 type JobId = Int
 type JobWebURL = Text
 type Token = ByteString
@@ -46,7 +46,7 @@ instance FromJSON JobInfo where
         JobInfo <$> o .: "web_url"
 
 fetchJobInfo :: Token -> ProjectId -> JobId -> IO JobInfo
-fetchJobInfo apiToken projectId jobId = runReq defaultHttpConfig $ do
+fetchJobInfo apiToken (ProjectId projectId) jobId = runReq defaultHttpConfig $ do
     response <-
         req
             R.GET
