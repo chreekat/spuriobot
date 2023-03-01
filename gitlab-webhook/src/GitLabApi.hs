@@ -32,6 +32,7 @@ import qualified Network.HTTP.Req as R
 import TextShow (showt)
 
 newtype ProjectId = ProjectId {unProjectId :: Int} deriving (Show, Ord, Eq, FromJSON, ToJSON)
+-- TODO convert to newtype when the fancy strikes
 type JobId = Int
 type JobWebURL = Text
 type Token = ByteString
