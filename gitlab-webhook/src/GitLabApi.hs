@@ -10,6 +10,7 @@ module GitLabApi (
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson (
     FromJSON,
+    ToJSON,
     parseJSON,
     withObject,
     (.:),
@@ -30,7 +31,7 @@ import Network.HTTP.Req (
 import qualified Network.HTTP.Req as R
 import TextShow (showt)
 
-newtype ProjectId = ProjectId {unProjectId :: Int} deriving (Show, Ord, Eq)
+newtype ProjectId = ProjectId {unProjectId :: Int} deriving (Show, Ord, Eq, FromJSON, ToJSON)
 type JobId = Int
 type JobWebURL = Text
 type Token = ByteString

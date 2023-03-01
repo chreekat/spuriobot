@@ -117,7 +117,7 @@ instance FromJSON GitLabBuildEvent where
             <*> v .: "build_name"
             <*> v .: "build_status"
             <*> v .: "build_failure_reason"
-            <*> (GitLabApi.ProjectId <$> v .: "project_id")
+            <*> v .: "project_id"
 
 instance ToJSON GitLabBuildEvent where
     toJSON x =
@@ -127,7 +127,7 @@ instance ToJSON GitLabBuildEvent where
             , "build_name" .= glbBuildName x
             , "build_status" .= glbBuildStatus x
             , "build_failure_reason" .= glbBuildFailureReason x
-            , "project_id" .= GitLabApi.unProjectId (glbProjectId x)
+            , "project_id" .= glbProjectId x
             ]
 
 fetchJobLogs :: GitLabApi.Token -> GitLabApi.JobWebURL -> IO Text
