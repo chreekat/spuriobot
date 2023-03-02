@@ -14,7 +14,7 @@ import Test.Hspec (
     shouldSatisfy,
  )
 
-import GitLab
+import SpuriousFailures
 
 main :: IO ()
 main = hspec $ do

@@ -2,12 +2,13 @@ module Main (main) where
 
 import qualified Data.Text as T
 import Data.Text.Encoding (encodeUtf8)
-import GitLab
 import Network.Wai.Handler.Warp (run)
 import System.Environment (
     getArgs,
     getEnv,
  )
+
+import SpuriousFailures
 
 main :: IO ()
 main = do

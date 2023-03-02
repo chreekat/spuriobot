@@ -1,8 +1,21 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeOperators #-}
 
-module GitLab (
+{- |
+Module: SpuriousFailures
+Description: Log spurious GHC GitLab build failures
+
+Overall flow of the application:
+- Receive a build event webhook call from GitLab
+- Fetch the job log for that event
+- Search in the log for known patterns for spurious failures
+- Log the results to stdout
+- TODO: write results to database
+- TODO: tell the job to retry
+-}
+module SpuriousFailures (
     GitLabBuildEvent (..),
     grepForFailures,
     webhookApplication,
@@ -38,10 +51,13 @@ import Network.HTTP.Req (
     bsResponse,
     defaultHttpConfig,
     headerRedacted,
+    https,
+    jsonResponse,
     req,
     responseBody,
     runReq,
     useHttpsURI,
+    (/:),
  )
 import qualified Network.HTTP.Req as R
 import Servant (
@@ -60,27 +76,50 @@ import Text.Regex.TDFA (
 import Text.URI (mkURI)
 import TextShow (showt)
 
-import qualified GitLabApi
+--
+-- Gitlab API types and handlers
+--
 
--- overall flow of the application:
---
--- receive a webhook call
--- fetch the job log
--- grep for patterns in the log
--- write results to database
--- TODO: tell the job to retry
---
--- we want to:
---
--- replicate existing behaviour
--- with tests
--- and a systemd unit
--- deployable via nix
+newtype ProjectId = ProjectId {unProjectId :: Int} deriving (Show, Ord, Eq, FromJSON, ToJSON)
+
+-- TODO convert to newtype when the fancy strikes
+type JobId = Int
+type JobWebURL = Text
+type Token = ByteString
+
+-- Sparse definition
+newtype JobInfo = JobInfo
+    { webUrl :: JobWebURL
+    }
+    deriving (Show, Ord, Eq)
+
+instance FromJSON JobInfo where
+    parseJSON = withObject "JobInfo" $ \o ->
+        JobInfo <$> o .: "web_url"
+
+fetchJobInfo :: Token -> ProjectId -> JobId -> IO JobInfo
+fetchJobInfo apiToken (ProjectId projectId) jobId = runReq defaultHttpConfig $ do
+    response <-
+        req
+            R.GET
+            ( https
+                "gitlab.haskell.org"
+                /: "api"
+                /: "v4"
+                /: "projects"
+                /: showt projectId
+                /: "jobs"
+                /: showt jobId
+            )
+            NoReqBody
+            jsonResponse
+            (headerRedacted "PRIVATE-TOKEN" apiToken)
+    liftIO $ pure (responseBody response)
 
 type WebHookAPI =
     ReqBody '[JSON] GitLabBuildEvent :> Post '[JSON] ()
 
-webhookServer :: GitLabApi.Token -> Server WebHookAPI
+webhookServer :: Token -> Server WebHookAPI
 webhookServer apiToken glBuildEvent = do
     -- TODO proper logging
     -- Fork a thread to do the processing and immediately return a 'success' status
@@ -105,7 +144,7 @@ data GitLabBuildEvent = GitLabBuildEvent
     , glbBuildName :: String
     , glbBuildStatus :: String
     , glbBuildFailureReason :: String
-    , glbProjectId :: GitLabApi.ProjectId
+    , glbProjectId :: ProjectId
     }
     deriving (Show, Ord, Eq)
 
@@ -130,7 +169,7 @@ instance ToJSON GitLabBuildEvent where
             , "project_id" .= glbProjectId x
             ]
 
-fetchJobLogs :: GitLabApi.Token -> GitLabApi.JobWebURL -> IO Text
+fetchJobLogs :: Token -> JobWebURL -> IO Text
 fetchJobLogs apiToken jobWebURL = do
     let mbUri = do
             uri <- mkURI (jobWebURL <> "/raw")
@@ -206,7 +245,7 @@ grepForFailures =
         ]
 
 -- TODO real logging
-logFailures :: GitLabApi.JobId -> Set Failure -> IO ()
+logFailures :: JobId -> Set Failure -> IO ()
 logFailures jobId failures =
     forM_
         (S.toList failures)
@@ -232,10 +271,10 @@ logFailures jobId failures =
 --            ]
 --    values = map (\(code, (jobId, _)) -> (jobId, code, jobDate, jobWebUrl, jobRunnerId)) failures
 
-processJob :: GitLabApi.Token -> GitLabBuildEvent -> IO ()
+processJob :: Token -> GitLabBuildEvent -> IO ()
 processJob apiToken GitLabBuildEvent{..} = do
-    jobInfo <- GitLabApi.fetchJobInfo apiToken glbProjectId glbBuildId
-    logs <- fetchJobLogs apiToken (GitLabApi.webUrl jobInfo)
+    jobInfo <- fetchJobInfo apiToken glbProjectId glbBuildId
+    logs <- fetchJobLogs apiToken (webUrl jobInfo)
     let failures = grepForFailures logs
     logFailures glbBuildId failures
 
