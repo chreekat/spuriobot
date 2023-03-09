@@ -1,0 +1,21 @@
+# Match current version from nixpkgs
+resolver: ghc-9.2.4
+
+# Do we still need this?
+#system-ghc: true
+
+nix:
+  enable: true
+  shell-file: shell.nix
+
+packages:
+- .
+# extra-deps: []
+
+# flags: {}
+
+# extra-package-dbs: []
+
+# Extra directories used by stack for building
+# extra-include-dirs: [/path/to/dir]
+# extra-lib-dirs: [/path/to/dir]
