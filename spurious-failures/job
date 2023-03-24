@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+
+if [ $# -eq 2 ]; then
+    PRJ=$1
+    JOB=$2
+else
+    PRJ=1
+    JOB=$1
+fi
+
+source ~/.bash/haskell-foundation.sh
+curl  --globoff --header "PRIVATE-TOKEN: $GIT_PRIVATE_TOKEN" "https://gitlab.haskell.org/api/v4/projects/$PRJ/jobs/$JOB" | jq . -C | less
+

@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+set -e
+
+: ${DB:=jobs.db}
+
+view () {
+    echo $1 > current_trace
+    curl -L "https://gitlab.haskell.org/ghc/head.hackage/-/jobs/${1}/raw" | ( LESS=-iRXK less )
+}
+
+if [[ -n "$@" ]]; then
+    for t in "$@"; do
+        view $t
+    done
+else
+    sqlite3 "${DB}" "$(xclip -selection clipboard -o)" | while read t; do
+        view $t
+    done
+fi
