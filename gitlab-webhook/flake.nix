@@ -16,7 +16,12 @@
           packages = pkgs: [ pkgs.spuriobot ];
         };
       };
-      nixosModules.spuriobot = { config }: {
+      nixosModules.default = { pkgs, ... }: {
+        systemd.services.spuriobot = {
+          description = "GitLab spurious failure webhook service";
+          wantedBy = [ "multi-user.target" ];
+          serviceConfig.ExecStart = pkgs.lib.getExe pkgs.myHaskellPackages.spuriobot;
+        };
       };
       devShell.x86_64-linux = pkgs.myShell;
       packages.x86_64-linux.spuriobot = pkgs.myHaskellPackages.spuriobot;
