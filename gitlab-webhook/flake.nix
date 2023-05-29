@@ -16,13 +16,35 @@
           packages = pkgs: [ pkgs.spuriobot ];
         };
       };
-      nixosModules.default = { pkgs, ... }: {
-        systemd.services.spuriobot = {
-          description = "GitLab spurious failure webhook service";
-          wantedBy = [ "multi-user.target" ];
-          serviceConfig.ExecStart = pkgs.lib.getExe pkgs.myHaskellPackages.spuriobot;
+      nixosModules.default = { config, lib, pkgs, ... }:
+        let cfg = config.services.spuriobot;
+        in {
+          options.services.spuriobot = {
+            enable = lib.mkOption {
+              type = lib.types.bool;
+              default = false;
+              description = ''
+                Enable spuriobot, the GitLab webhook service that retries
+                spurious failures.
+              '';
+
+            envFile = lib.mkOption {
+              type = lib.types.str;
+              description = ''
+                Path, as a string, to an EnvironmentFile (see systemd.exec).
+                Used for passing secrets.
+              '';
+            };
+          };
+          config = {
+            systemd.services.spuriobot = lib.mkIf cfg.enable {
+              description = "GitLab spurious failure webhook service";
+              wantedBy = [ "multi-user.target" ];
+              serviceConfig.ExecStart = pkgs.lib.getExe pkgs.myHaskellPackages.spuriobot;
+              serviceConfig.EnvironmentFile = cfg.envFile;
+            };
+          };
         };
-      };
       devShells.x86_64-linux.default = pkgs.myShell;
       packages.x86_64-linux.default = pkgs.myHaskellPackages.spuriobot;
       apps.x86_64-linux.default = {
@@ -30,4 +52,5 @@
         program = pkgs.lib.getExe self.packages.x86_64-linux.default;
       };
     };
+  };
 }
