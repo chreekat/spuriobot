@@ -1,4 +1,4 @@
-cabal-version: 1.12
+cabal-version: 3.0
 
 -- This file has been generated from package.yaml by hpack version 0.35.0.
 --
@@ -10,7 +10,7 @@ description:    Collect and report spurious CI failures by category
 author:         Chris Linton-Ford
 maintainer:     Chris Linton-Ford
 copyright:      2023 Chris Linton-Ford
-license:        BSD3
+license:        BSD-3-Clause
 license-file:   LICENSE
 build-type:     Simple
 extra-source-files:
@@ -36,7 +36,7 @@ library
     , modern-uri
     , postgresql-simple
     , regex-tdfa
-    , req
+    , req ^>= 3.13.0
     , servant
     , servant-client
     , servant-server
