@@ -1,7 +1,6 @@
 {
   outputs = { self, nixpkgs, ... }:
     let
-
       hsOverlay = pkgs: self: super: {
         spuriobot = self.callCabal2nix "spuriobot" ./. {};
       };
@@ -40,11 +39,18 @@
             systemd.services.spuriobot = lib.mkIf cfg.enable {
               description = "GitLab spurious failure webhook service";
               wantedBy = [ "multi-user.target" ];
-              serviceConfig.ExecStart = pkgs.lib.getExe pkgs.myHaskellPackages.spuriobot;
-              serviceConfig.EnvironmentFile = cfg.envFile;
+              serviceConfig = {
+                ExecStart = pkgs.lib.getExe pkgs.myHaskellPackages.spuriobot;
+                EnvironmentFile = cfg.envFile;
+                User = "spuriobot";
+                DynamicUser = "yes";
+                SupplementaryGroups = [ "keys" ];
+              };
             };
           };
         };
+      };
+
       devShells.x86_64-linux.default = pkgs.myShell;
       packages.x86_64-linux.default = pkgs.myHaskellPackages.spuriobot;
       apps.x86_64-linux.default = {
@@ -52,5 +58,4 @@
         program = pkgs.lib.getExe self.packages.x86_64-linux.default;
       };
     };
-  };
 }
