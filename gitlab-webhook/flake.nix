@@ -4,7 +4,7 @@
       hsOverlay = pkgs: self: super: {
         spuriobot = self.callCabal2nix "spuriobot" ./. {};
       };
-      pkgs = import nixpkgs { system = "x86_64-linux"; overlays = [ self.overlays.default ]; };
+      myPkgs = import nixpkgs { system = "x86_64-linux"; overlays = [ self.overlays.default ]; };
     in {
       overlays.default = final: prev: {
         myHaskellPackages = prev.haskellPackages.override {
@@ -41,22 +41,35 @@
               description = "GitLab spurious failure webhook service";
               wantedBy = [ "multi-user.target" ];
               serviceConfig = {
-                ExecStart = pkgs.lib.getExe pkgs.myHaskellPackages.spuriobot;
+                # Use myPkgs here because we need a spanking new version of
+                # 'req', which isn't on the one-and-only target machine this flake
+                # is being written for. Otherwise it would be better(?) to
+                # include our overlay in this config and pick up the package via
+                # the standard 'pkgs'. This would allow the client system to use
+                # the same nixpkgs throughout automatically, instead of pulling
+                # in a second one through myPkgs.
+                #
+                # Alternatively, we could specify the right version of req in
+                # our overlay, but then users would have no (easy) way to
+                # override it. At least this way, users can override the nixpkgs
+                # used by this flake (at their own risk).
+                #
+                # If we stop supporting NixOS < 23.05, we can get rid of all
+                # this.
+                ExecStart = pkgs.lib.getExe myPkgs.myHaskellPackages.spuriobot;
                 EnvironmentFile = cfg.envFile;
                 User = "spuriobot";
                 DynamicUser = "yes";
-                SupplementaryGroups = [ "keys" ];
               };
             };
           };
-        };
       };
 
-      devShells.x86_64-linux.default = pkgs.myShell;
-      packages.x86_64-linux.default = pkgs.myHaskellPackages.spuriobot;
+      devShells.x86_64-linux.default = myPkgs.myShell;
+      packages.x86_64-linux.default = myPkgs.myHaskellPackages.spuriobot;
       apps.x86_64-linux.default = {
         type = "app";
-        program = pkgs.lib.getExe self.packages.x86_64-linux.default;
+        program = myPkgs.lib.getExe self.packages.x86_64-linux.default;
       };
     };
 }
