@@ -26,6 +26,7 @@
                 Enable spuriobot, the GitLab webhook service that retries
                 spurious failures.
               '';
+            };
 
             envFile = lib.mkOption {
               type = lib.types.str;
