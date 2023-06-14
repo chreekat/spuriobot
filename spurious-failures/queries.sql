@@ -1,5 +1,15 @@
 # METRICS
 
+SELECT strftime('%Y-%W', json->>'$.created_at') AS week,
+       SUM(CASE WHEN (json->>'$.status') = 'success' THEN 1.0 ELSE 0 END) /
+       (SUM(CASE WHEN (json->>'$.status') = 'success' THEN 1 ELSE 0 END) +
+       SUM(CASE WHEN (json->>'$.status') = 'failed' THEN 1 ELSE 0 END)) ratio
+FROM pipeline
+where json->>'ref' = 'master'
+and date('%Y-%W', json->>'created_at') >= "2023-05-16"
+GROUP BY strftime('%Y-%W', (json->>'$.created_at'));
+
+
 SELECT strftime('%Y-%m-%d', (json_extract(json, '$.created_at'))) AS week,
        SUM(CASE WHEN json_extract(json, '$.status') = 'success' THEN 1.0 ELSE 0 END) /
        (SUM(CASE WHEN json_extract(json, '$.status') = 'success' THEN 1 ELSE 0 END) +

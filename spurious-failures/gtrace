@@ -7,6 +7,6 @@ set -e
 tmp="$(mktemp -d)"
 trap "rm -r $tmp" EXIT
 
-sqlite3 "${DB}" "$(xclip -selection clipboard -o)" | xargs -P 10 -I '{}'  ../view_trace "$tmp" '{}' "$@"
+sqlite3 "${DB}" "$(xclip -selection clipboard -o)" | xargs -P 10 -I '{}'  ./view_trace "$tmp" '{}' "$@"
 
 (cd "$tmp"; ls -r | xargs cat)
