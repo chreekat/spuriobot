@@ -1,5 +1,4 @@
-{ sources ? import ./nix/sources.nix }:
-
-let pkgs = import sources.nixpkgs { overlays = []; config = {}; };
+let
+  flake = builtins.getFlake (toString ./.);
 in
-pkgs.haskellPackages.callCabal2nix "gitlab-webhook" ./. {}
+  flake.packages."${builtins.currentSystem}".default
