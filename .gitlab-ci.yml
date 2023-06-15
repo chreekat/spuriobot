@@ -6,10 +6,10 @@ default:
 
 spuriobot_nix_build:
   script: "make -C gitlab-webhook build"
+  rules:
+    - if: $CI_COMMIT_REF_PROTECTED != "true"
 
-spuriobot_cachix_push:
-  script: 
-    - echo aaa $CI_COMMIT_REF_PROTECTED bbb
-    - "make -C gitlab-webhook push"
+spuriobot_nix_build_and_cachix_push:
+  script: "make -C gitlab-webhook push"
   rules:
     - if: $CI_COMMIT_REF_PROTECTED == "true"
