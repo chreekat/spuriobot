@@ -269,7 +269,7 @@ grepForFailures =
 -- TODO real logging
 logFailures :: JobId -> Set Failure -> IO ()
 logFailures jobId failures
-    | S.null failures = T.putStrLn $ "job " <> showt jobId <> ": no failures"
+    | S.null failures = T.putStrLn $ "job " <> showt jobId <> ": no known failures"
     | otherwise = forM_
         (S.toList failures)
         ( \(_, msg) ->
