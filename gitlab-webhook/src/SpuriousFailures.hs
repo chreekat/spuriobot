@@ -140,6 +140,7 @@ instance ToJSON GitLabBuildEvent where
             , "project_id" .= glbProjectId x
             ]
 
+-- | Get /jobs/<job-id>
 fetchJobInfo :: Token -> ProjectId -> JobId -> IO JobInfo
 fetchJobInfo apiToken (ProjectId projectId) jobId = runReq defaultHttpConfig $ do
     response <-
@@ -188,6 +189,7 @@ webhookApplication strApiToken =
 -- Controller logic
 --
 
+-- | Get the raw job trace.
 fetchJobLogs :: Token -> JobWebURL -> IO Text
 fetchJobLogs apiToken jobWebURL = do
     let mbUri = do
@@ -197,6 +199,7 @@ fetchJobLogs apiToken jobWebURL = do
     case mbUri of
         -- this error will only terminate the forked processJob thread, so the
         -- main process should keep listening and handling requests
+        -- FIXME: use throwError in the Handler monad
         Nothing -> error $ "Could not parse URL: " <> T.unpack jobWebURL
         Just uri -> runReq defaultHttpConfig $ do
             -- TODO handle redirect to login which is gitlab's way of saying 404
