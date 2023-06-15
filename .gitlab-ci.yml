@@ -5,11 +5,11 @@ default:
     - x86_64-linux
 
 spuriobot_nix_build:
-  script: "make -C gitlab-webhook build"
+  script: ./ci.sh spuriobot_nix_build
   rules:
     - if: $CI_COMMIT_REF_PROTECTED != "true"
 
 spuriobot_nix_build_and_cachix_push:
-  script: "make -C gitlab-webhook push"
+  script: ./ci.sh spuriobot_nix_build_and_cachix_push
   rules:
     - if: $CI_COMMIT_REF_PROTECTED == "true"

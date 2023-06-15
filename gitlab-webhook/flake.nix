@@ -1,7 +1,7 @@
 {
   nixConfig = {
     extra-substituters = [ "https://spuriobot.cachix.org" ];
-    trusted-public-keys = [ "spuriobot.cachix.org-1:npiBX491xE1n5qVRBBtqutI0PzJV2OeF9dCgibklr3c=" ];
+    extra-trusted-public-keys = [ "spuriobot.cachix.org-1:npiBX491xE1n5qVRBBtqutI0PzJV2OeF9dCgibklr3c=" ];
   };
   outputs = { self, nixpkgs, ... }:
     let
