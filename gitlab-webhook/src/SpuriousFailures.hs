@@ -35,9 +35,11 @@ import Data.Aeson (
     parseJSON,
     toJSON,
     withObject,
+    withText,
     (.:),
     (.=),
  )
+import qualified Data.Aeson as Aeson
 import Data.ByteString (ByteString)
 import Data.Maybe (mapMaybe)
 import Data.Set (Set)
@@ -97,11 +99,26 @@ instance FromJSON JobInfo where
     parseJSON = withObject "JobInfo" $ \o ->
         JobInfo <$> o .: "web_url"
 
+-- | The known build statuses that we care about.
+data BuildStatus = Success | Failed | OtherBuildStatus Text
+    deriving (Eq, Show)
+
+instance FromJSON BuildStatus where
+    parseJSON = withText "BuildStatus" (pure . f) where
+        f "success" = Success
+        f "failed" = Failed
+        f x = OtherBuildStatus x
+
+instance ToJSON BuildStatus where
+    toJSON Success = Aeson.String "success"
+    toJSON Failed = Aeson.String "failed"
+    toJSON (OtherBuildStatus x) = Aeson.String x
+
 -- BuildEvent is what the webhook receives
 data GitLabBuildEvent = GitLabBuildEvent
     { glbBuildId :: Int
     , glbBuildName :: Text
-    , glbBuildStatus :: String
+    , glbBuildStatus :: BuildStatus
     , glbProjectId :: ProjectId
     }
     deriving (Show, Eq)
