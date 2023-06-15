@@ -99,33 +99,27 @@ instance FromJSON JobInfo where
 
 -- BuildEvent is what the webhook receives
 data GitLabBuildEvent = GitLabBuildEvent
-    { glbRef :: String
-    , glbBuildId :: Int
-    , glbBuildName :: String
+    { glbBuildId :: Int
+    , glbBuildName :: Text
     , glbBuildStatus :: String
-    , glbBuildFailureReason :: String
     , glbProjectId :: ProjectId
     }
-    deriving (Show, Ord, Eq)
+    deriving (Show, Eq)
 
 instance FromJSON GitLabBuildEvent where
     parseJSON = withObject "GitLabBuildEvent" $ \v ->
         GitLabBuildEvent
-            <$> v .: "ref"
-            <*> v .: "build_id"
+            <$> v .: "build_id"
             <*> v .: "build_name"
             <*> v .: "build_status"
-            <*> v .: "build_failure_reason"
             <*> v .: "project_id"
 
 instance ToJSON GitLabBuildEvent where
     toJSON x =
         object
-            [ "ref" .= glbRef x
-            , "build_id" .= glbBuildId x
+            [ "build_id" .= glbBuildId x
             , "build_name" .= glbBuildName x
             , "build_status" .= glbBuildStatus x
-            , "build_failure_reason" .= glbBuildFailureReason x
             , "project_id" .= glbProjectId x
             ]
 
