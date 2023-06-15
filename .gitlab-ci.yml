@@ -1,0 +1,15 @@
+image: nixos/nix
+
+default:
+  tags: 
+    - x86_64-linux
+
+spuriobot_nix_build:
+  script: "make -C gitlab-webhook build"
+
+spuriobot_cachix_push:
+  script: 
+    - echo aaa $CI_COMMIT_REF_PROTECTED bbb
+    - "make -C gitlab-webhook push"
+  rules:
+    - if: $CI_COMMIT_REF_PROTECTED == "true"
