@@ -3,6 +3,7 @@ module Main (main) where
 import qualified Data.Text as T
 import Data.Text.Encoding (encodeUtf8)
 import Network.Wai.Handler.Warp (run)
+import System.IO (hSetBuffering, stdout, BufferMode(..))
 import System.Environment (
     getArgs,
     getEnv,
@@ -12,6 +13,9 @@ import SpuriousFailures
 
 main :: IO ()
 main = do
+    -- Ensure journald gets our output
+    hSetBuffering stdout NoBuffering
+
     args <- getArgs
     envStrApiToken <- getEnv "GITLAB_API_TOKEN"
     case envStrApiToken of
