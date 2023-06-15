@@ -174,7 +174,7 @@ webhookServer apiToken glBuildEvent = do
     -- code to the caller; see the recommendations from GitLab documentation:
     -- https://docs.gitlab.com/ee/user/project/integrations/webhooks.html#configure-your-webhook-receiver-endpoint
     liftIO . void . forkIO $
-        processJob
+        processBuildEvent
             apiToken
             glBuildEvent
 
@@ -294,8 +294,17 @@ logFailures jobId failures
 --            ]
 --    values = map (\(code, (jobId, _)) -> (jobId, code, jobDate, jobWebUrl, jobRunnerId)) failures
 
-processJob :: Token -> GitLabBuildEvent -> IO ()
-processJob apiToken GitLabBuildEvent{..} = do
+processBuildEvent :: Token -> GitLabBuildEvent -> IO ()
+processBuildEvent apiToken GitLabBuildEvent{..} = do
+    case glbBuildStatus of
+        OtherBuildStatus x ->
+            T.putStrLn ("Skipping job " <> showt glbBuildId <> " with status '" <> x <> "'")
+        Success ->
+            T.putStrLn ("Skipping successful job " <> showt glbBuildId)
+        Failed -> processJob apiToken glbProjectId glbBuildId
+
+processJob :: Token -> ProjectId -> JobId -> IO ()
+processJob apiToken glbProjectId glbBuildId = do
     jobInfo <- fetchJobInfo apiToken glbProjectId glbBuildId
     logs <- fetchJobLogs apiToken (webUrl jobInfo)
     let failures = grepForFailures logs
