@@ -97,46 +97,6 @@ instance FromJSON JobInfo where
     parseJSON = withObject "JobInfo" $ \o ->
         JobInfo <$> o .: "web_url"
 
-fetchJobInfo :: Token -> ProjectId -> JobId -> IO JobInfo
-fetchJobInfo apiToken (ProjectId projectId) jobId = runReq defaultHttpConfig $ do
-    response <-
-        req
-            R.GET
-            ( https
-                "gitlab.haskell.org"
-                /: "api"
-                /: "v4"
-                /: "projects"
-                /: showt projectId
-                /: "jobs"
-                /: showt jobId
-            )
-            NoReqBody
-            jsonResponse
-            (headerRedacted "PRIVATE-TOKEN" apiToken)
-    liftIO $ pure (responseBody response)
-
-type WebHookAPI =
-    ReqBody '[JSON] GitLabBuildEvent :> Post '[JSON] ()
-
-webhookServer :: Token -> Server WebHookAPI
-webhookServer apiToken glBuildEvent = do
-    -- TODO proper logging
-    -- Fork a thread to do the processing and immediately return a 'success' status
-    -- code to the caller; see the recommendations from GitLab documentation:
-    -- https://docs.gitlab.com/ee/user/project/integrations/webhooks.html#configure-your-webhook-receiver-endpoint
-    liftIO . void . forkIO $
-        processJob
-            apiToken
-            glBuildEvent
-
-webhookAPI :: Proxy WebHookAPI
-webhookAPI = Proxy
-
-webhookApplication :: ByteString -> Application
-webhookApplication strApiToken =
-    serve webhookAPI $ webhookServer strApiToken
-
 -- BuildEvent is what the webhook receives
 data GitLabBuildEvent = GitLabBuildEvent
     { glbRef :: String
@@ -168,6 +128,54 @@ instance ToJSON GitLabBuildEvent where
             , "build_failure_reason" .= glbBuildFailureReason x
             , "project_id" .= glbProjectId x
             ]
+
+fetchJobInfo :: Token -> ProjectId -> JobId -> IO JobInfo
+fetchJobInfo apiToken (ProjectId projectId) jobId = runReq defaultHttpConfig $ do
+    response <-
+        req
+            R.GET
+            ( https
+                "gitlab.haskell.org"
+                /: "api"
+                /: "v4"
+                /: "projects"
+                /: showt projectId
+                /: "jobs"
+                /: showt jobId
+            )
+            NoReqBody
+            jsonResponse
+            (headerRedacted "PRIVATE-TOKEN" apiToken)
+    liftIO $ pure (responseBody response)
+
+--
+-- Servant boilerplate
+--
+
+type WebHookAPI =
+    ReqBody '[JSON] GitLabBuildEvent :> Post '[JSON] ()
+
+webhookServer :: Token -> Server WebHookAPI
+webhookServer apiToken glBuildEvent = do
+    -- TODO proper logging
+    -- Fork a thread to do the processing and immediately return a 'success' status
+    -- code to the caller; see the recommendations from GitLab documentation:
+    -- https://docs.gitlab.com/ee/user/project/integrations/webhooks.html#configure-your-webhook-receiver-endpoint
+    liftIO . void . forkIO $
+        processJob
+            apiToken
+            glBuildEvent
+
+webhookAPI :: Proxy WebHookAPI
+webhookAPI = Proxy
+
+webhookApplication :: ByteString -> Application
+webhookApplication strApiToken =
+    serve webhookAPI $ webhookServer strApiToken
+
+--
+-- Controller logic
+--
 
 fetchJobLogs :: Token -> JobWebURL -> IO Text
 fetchJobLogs apiToken jobWebURL = do
