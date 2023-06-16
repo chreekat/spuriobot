@@ -17,9 +17,11 @@ Overall flow of the application:
 -}
 module SpuriousFailures (
     GitLabBuildEvent (..),
-    grepForFailures,
+    collectFailures,
     webhookApplication,
     webhookAPI,
+    Check(..),
+    Jobbo(..),
 ) where
 
 import Control.Concurrent (forkIO)
@@ -37,6 +39,7 @@ import Data.Aeson (
     withObject,
     withText,
     (.:),
+    (.:?),
     (.=),
  )
 import qualified Data.Aeson as Aeson
@@ -72,12 +75,12 @@ import Servant (
     serve,
     (:>),
  )
-import Text.Regex.TDFA (
-    (=~),
- )
+import qualified Text.Regex.TDFA as Regex
 import Text.URI (mkURI)
 import TextShow (showt)
 
+(=~) :: Text -> Text -> Bool
+(=~) = (Regex.=~)
 --
 -- Gitlab API types and handlers
 --
@@ -120,6 +123,7 @@ data GitLabBuildEvent = GitLabBuildEvent
     , glbBuildName :: Text
     , glbBuildStatus :: BuildStatus
     , glbProjectId :: ProjectId
+    , glbJobFailureReason :: Maybe JobFailureReason
     }
     deriving (Show, Eq)
 
@@ -130,6 +134,7 @@ instance FromJSON GitLabBuildEvent where
             <*> v .: "build_name"
             <*> v .: "build_status"
             <*> v .: "project_id"
+            <*> v .:? "failure_reason"
 
 instance ToJSON GitLabBuildEvent where
     toJSON x =
@@ -139,6 +144,15 @@ instance ToJSON GitLabBuildEvent where
             , "build_status" .= glbBuildStatus x
             , "project_id" .= glbProjectId x
             ]
+
+data JobFailureReason = JobTimeout | JobStuck | OtherReason Text
+    deriving (Eq, Show)
+
+instance FromJSON JobFailureReason where
+    parseJSON = withText "JobFailureReason" (pure . f) where
+        f "job_execution_timeout" = JobTimeout
+        f "stuck_or_timeout_failure" = JobStuck
+        f x = OtherReason x
 
 -- | Get /jobs/<job-id>
 fetchJobInfo :: Token -> ProjectId -> JobId -> IO JobInfo
@@ -222,56 +236,98 @@ type FailureMessage = Text
 
 type Failure = (FailureErrorCode, FailureMessage)
 
--- TODO tests
-grepForFailures :: Text -> Set Failure
-grepForFailures =
-    S.fromList . concatMap searchErrors . T.lines
-  where
-    searchErrors :: Text -> [Failure]
-    searchErrors s = mapMaybe (findError s) regexes
-    findError :: Text -> (Text, (FailureMessage, FailureErrorCode)) -> Maybe Failure
-    findError line (regex, (msg, code)) = if line =~ regex then Just (code, msg) else Nothing
-    regexes =
-        [
-            ( "Cannot connect to the Docker daemon at unix:///var/run/docker.sock"
-            , ("docker failure", "docker")
-            )
-        ,
-            ( "failed to pull image \"registry.gitlab.haskell.org"
-            , ("image pull failure", "pull_image")
-            )
-        ,
-            ( "Failed to connect to gitlab.haskell.org"
-            , ("GitLab connection failure", "connect_gitlab")
-            )
-        ,
-            ( "No space left on device"
-            , ("exhausted disk", "no_space")
-            )
-        ,
-            ( "failed due to signal 9 .Killed"
-            , ("received signal 9", "signal_9")
-            )
-        ,
-            ( "Idle CPU consumption too different"
-            , ("T16916 failed", "T16916")
-            )
-        ,
-            ( "Cannot allocate memory|osCommitMemory: VirtualAlloc MEM_COMMIT failed|out of memory allocating \\d+ bytes"
-            , ("could not allocate memory", "cannot_allocate")
-            )
-        ,
-            ( "MoveFileEx"
-            , ("MoveFileEx-related failure", "MoveFileEx")
-            )
+data Check = Check
+    { checkMsg :: FailureMessage
+    , checkCode :: FailureErrorCode
+    , checkFn :: Jobbo -> Bool
+    }
+
+runCheck :: Jobbo -> Check -> Maybe (FailureMessage, FailureErrorCode)
+runCheck j (Check msg cod fn) = if fn j then Just (cod, msg) else Nothing
+
+checkTimeout :: Check
+checkTimeout = Check "job timeout" "job_timeout" $ \(Jobbo rs _) ->
+    case rs of
+        Just JobTimeout -> True
+        Just JobStuck -> True
+        Just (OtherReason _) -> False
+        Nothing -> False
+
+checkLogs :: [Check]
+checkLogs =
+    let (Jobbo _ logs) !> search = search `T.isInfixOf` logs
+        (Jobbo _ logs) ~> search = logs =~ search
+    in
+        [ Check "docker failure" "docker"
+            (!> "Cannot connect to the Docker daemon at unix:///var/run/docker.sock")
+        -- TODO: Disabled until the bot gains backoff abilities.
+        --, Check "image pull failure" "pull_image"
+        --    (!> "failed to pull image \"registry.gitlab.haskell.org")
+        , Check "GitLab connection failure" "connect_gitlab"
+            (!> "Failed to connect to gitlab.haskell.org")
+        , Check "exhausted disk" "no_space"
+            (\j -> j !> "No space left on device"
+                -- Avoid false positives from T21336 output.
+                -- This may cause false negatives, but I think that's the lesser
+                -- of two evils.
+                && not (j !> "GHC.IO.FD.fdWrite: resource exhausted"
+                        || j !> "<stdout>: hFlush: resource exhausted"))
+        -- head.hackage#38
+        , Check "received signal 9" "signal_9"
+            (~> "failed due to signal 9 .Killed")
+        -- Modified this search due to ghc#23139. See #9.
+        , Check "could not allocate memory" "cannot_allocate"
+            (~> "osCommitMemory: VirtualAlloc MEM_COMMIT failed|out of memory allocating \\d+ bytes")
+        , Check "MoveFileEx-related failure" "MoveFileEx"
+            (!> "MoveFileEx")
+        -- #23039
+        , Check "Submodule clone failure" "submodule_clone"
+            (~> "Failed to clone '.*' a second time, aborting")
+        -- #22870
+        , Check "ghc-pkg or hadrian failure" "ghc-pkg_died"
+            (!> "ghc-pkg dump failed: dieVerbatim: user error")
+        -- #22860
+        , Check "Nix#7273 failure" "nix_T7273"
+            (\t -> t !> "cannot link '/nix/store/.tmp-link"
+                || t !> "error: clearing flags of path '/nix/store")
+        -- #22408
+        , Check "\"cabal exec hadrian\" segfault" "cabal_hadrian_segfault"
+            (~> "Segmentation fault.*CABAL.*new-exec.*hadrian")
+        -- #22869
+        , Check "error code: -6" "code_-6"
+            (~> "Command failed with error code: -6")
+        , Check "runner terminated" "runner_process_terminated"
+            (!> "ERROR: Job failed (system failure): aborted: terminated")
+        -- #22967
+        , Check "ghc-config file conflict" "ghc-config_file_conflict"
+            (~> "posix_spawnp: resource busy")
+        -- #22990
+        , Check "error code: -11" "code_-11"
+            (~> "Command failed with error code: -11")
+        -- #21008
+        , Check "ulimit: Invalid argument" "ulimit"
+            (~> "ulimit: virtual memory: cannot modify limit: Invalid argument")
+        -- #23039
+        , Check "error cloning fresh repository" "repo_clone"
+            (!> "fresh repository.\x1b[0;m\nerror")
+        -- #23039 again
+        , Check "error fetch perf notes" "perf_note_fetch"
+            (!> "refs/notes/perf:refs/notes/perf\nerror:")
+        -- #23144
+        , Check "death by SIGQUIT" "sigquit"
+            (~> "^SIGQUIT: quit")
         ]
+
+-- TODO tests
+collectFailures :: Jobbo -> Set Failure
+collectFailures j = S.fromList (mapMaybe (runCheck j) (checkTimeout : checkLogs))
 
 -- TODO real logging
 logFailures :: JobId -> Set Failure -> IO ()
 logFailures jobId failures
     | S.null failures = T.putStrLn $ "job " <> showt jobId <> ": no known failures"
     | otherwise = forM_
-        (S.toList failures)
+        (S.toList failures) 
         ( \(_, msg) ->
             T.putStrLn $ "job " <> showt jobId <> ": " <> msg
         )
@@ -301,13 +357,17 @@ processBuildEvent apiToken GitLabBuildEvent{..} = do
             T.putStrLn ("Skipping job " <> showt glbBuildId <> " with status '" <> x <> "'")
         Success ->
             T.putStrLn ("Skipping successful job " <> showt glbBuildId)
-        Failed -> processJob apiToken glbProjectId glbBuildId
+        Failed -> processJob apiToken glbProjectId glbBuildId glbJobFailureReason
 
-processJob :: Token -> ProjectId -> JobId -> IO ()
-processJob apiToken glbProjectId glbBuildId = do
+-- | Characteristics of a job that we test against.
+data Jobbo = Jobbo (Maybe JobFailureReason) Text
+
+processJob :: Token -> ProjectId -> JobId -> Maybe JobFailureReason -> IO ()
+processJob apiToken glbProjectId glbBuildId glbJobFailureReason = do
     jobInfo <- fetchJobInfo apiToken glbProjectId glbBuildId
     logs <- fetchJobLogs apiToken (webUrl jobInfo)
-    let failures = grepForFailures logs
+    let jobbo = Jobbo glbJobFailureReason logs
+    let failures = collectFailures jobbo
     logFailures glbBuildId failures
 
 -- TODO keep a persistent connection around rather than making a new one each time

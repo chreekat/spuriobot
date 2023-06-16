@@ -25,4 +25,4 @@ main = hspec $ do
     describe "Log grepping" $ do
         it "can find a sample error" $ do
             logText <- T.readFile "testdata/kill9failure.log"
-            grepForFailures logText `shouldBe` S.fromList [("signal_9", "received signal 9")]
+            collectFailures (Jobbo Nothing logText) `shouldBe` S.fromList [("signal_9", "received signal 9")]
