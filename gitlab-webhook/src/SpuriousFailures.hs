@@ -111,17 +111,15 @@ instance FromJSON JobInfo where
         JobInfo <$> o .: "web_url"
 
 -- | The known build statuses that we care about.
-data BuildStatus = Success | Failed | OtherBuildStatus Text
+data BuildStatus = Failed | OtherBuildStatus Text
     deriving (Eq, Show)
 
 instance FromJSON BuildStatus where
     parseJSON = withText "BuildStatus" (pure . f) where
-        f "success" = Success
         f "failed" = Failed
         f x = OtherBuildStatus x
 
 instance ToJSON BuildStatus where
-    toJSON Success = Aeson.String "success"
     toJSON Failed = Aeson.String "failed"
     toJSON (OtherBuildStatus x) = Aeson.String x
 
