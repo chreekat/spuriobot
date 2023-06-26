@@ -34,6 +34,7 @@ library
     , containers
     , http-client
     , modern-uri
+    , mtl
     , postgresql-simple
     , regex-tdfa
     , req ^>= 3.13.0

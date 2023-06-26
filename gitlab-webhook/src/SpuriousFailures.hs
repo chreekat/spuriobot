@@ -2,6 +2,10 @@
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveAnyClass #-}
 
 {- |
 Module: SpuriousFailures
@@ -25,11 +29,13 @@ module SpuriousFailures (
 ) where
 
 import Control.Concurrent (forkIO)
+import Control.Exception (throwIO, Exception)
 import Control.Monad (
     forM_,
     void,
  )
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Trans (MonadIO, liftIO)
+import Control.Monad.Reader (ReaderT(..), MonadReader (ask), withReaderT)
 import Data.Aeson (
     FromJSON,
     ToJSON,
@@ -67,11 +73,11 @@ import Network.HTTP.Req (
 import qualified Network.HTTP.Req as R
 import Servant (
     Application,
+    Handler,
     JSON,
     Post,
     Proxy (..),
     ReqBody,
-    Server,
     serve,
     (:>),
  )
@@ -85,7 +91,9 @@ import TextShow (showt)
 -- Gitlab API types and handlers
 --
 
-newtype ProjectId = ProjectId {unProjectId :: Int} deriving (Show, Ord, Eq, FromJSON, ToJSON)
+newtype ProjectId = ProjectId {unProjectId :: Int}
+    deriving stock (Show, Ord, Eq)
+    deriving newtype (FromJSON, ToJSON)
 
 -- TODO convert to newtype when the fancy strikes
 type JobId = Int
@@ -155,8 +163,8 @@ instance FromJSON JobFailureReason where
         f x = OtherReason x
 
 -- | Get /jobs/<job-id>
-fetchJobInfo :: Token -> ProjectId -> JobId -> IO JobInfo
-fetchJobInfo apiToken (ProjectId projectId) jobId = runReq defaultHttpConfig $ do
+fetchJobInfo :: Token -> ProjectId -> JobId -> Spuriobot JobInfo
+fetchJobInfo apiToken (ProjectId projectId) jobId = liftIO $ runReq defaultHttpConfig $ do
     response <-
         req
             R.GET
@@ -172,7 +180,7 @@ fetchJobInfo apiToken (ProjectId projectId) jobId = runReq defaultHttpConfig $ d
             NoReqBody
             jsonResponse
             (headerRedacted "PRIVATE-TOKEN" apiToken)
-    liftIO $ pure (responseBody response)
+    pure (responseBody response)
 
 --
 -- Servant boilerplate
@@ -181,13 +189,12 @@ fetchJobInfo apiToken (ProjectId projectId) jobId = runReq defaultHttpConfig $ d
 type WebHookAPI =
     ReqBody '[JSON] GitLabBuildEvent :> Post '[JSON] ()
 
-webhookServer :: Token -> Server WebHookAPI
+webhookServer :: Token -> GitLabBuildEvent -> Handler ()
 webhookServer apiToken glBuildEvent = do
-    -- TODO proper logging
     -- Fork a thread to do the processing and immediately return a 'success' status
     -- code to the caller; see the recommendations from GitLab documentation:
     -- https://docs.gitlab.com/ee/user/project/integrations/webhooks.html#configure-your-webhook-receiver-endpoint
-    liftIO . void . forkIO $
+    liftIO . void . forkIO $ (`runReaderT` "") $ runSpuriobot $ withTrace (showt (glbBuildId glBuildEvent)) $
         processBuildEvent
             apiToken
             glBuildEvent
@@ -200,11 +207,35 @@ webhookApplication strApiToken =
     serve webhookAPI $ webhookServer strApiToken
 
 --
+-- Handler context setup
+--
+
+-- Version 0 of tracing is running handlers in a context where there's a logging
+-- context we can use to decorate traces.
+
+newtype Spuriobot a = Spuriobot { runSpuriobot :: ReaderT Text IO a }
+    deriving newtype (Functor, Applicative, Monad, MonadReader Text, MonadIO)
+
+withTrace :: Text -> Spuriobot a -> Spuriobot a
+withTrace t_  = Spuriobot . withReaderT (addContext t_) . runSpuriobot
+    where
+        addContext t old_t
+            | T.null old_t = t
+            | otherwise = old_t <> ":" <> t
+
+trace :: Text -> Spuriobot ()
+trace t = withTrace t (liftIO . T.putStrLn =<< ask)
+
+--
 -- Controller logic
 --
 
+data SpuriobotException = ParseUrlFail
+    deriving stock (Eq, Show)
+    deriving anyclass Exception
+
 -- | Get the raw job trace.
-fetchJobLogs :: Token -> JobWebURL -> IO Text
+fetchJobLogs :: Token -> JobWebURL -> Spuriobot Text
 fetchJobLogs apiToken jobWebURL = do
     let mbUri = do
             uri <- mkURI (jobWebURL <> "/raw")
@@ -214,7 +245,9 @@ fetchJobLogs apiToken jobWebURL = do
         -- this error will only terminate the forked processJob thread, so the
         -- main process should keep listening and handling requests
         -- FIXME: use throwError in the Handler monad
-        Nothing -> error $ "Could not parse URL: " <> T.unpack jobWebURL
+        Nothing -> do
+            trace $ "error: could not parse URL: " <> jobWebURL
+            liftIO $ throwIO ParseUrlFail
         Just uri -> runReq defaultHttpConfig $ do
             -- TODO handle redirect to login which is gitlab's way of saying 404
             -- if re.search('users/sign_in$', resp.url):
@@ -322,15 +355,12 @@ checkLogs =
 collectFailures :: Jobbo -> Set Failure
 collectFailures j = S.fromList (mapMaybe (runCheck j) (checkTimeout : checkLogs))
 
--- TODO real logging
-logFailures :: JobId -> Set Failure -> IO ()
-logFailures jobId failures
-    | S.null failures = T.putStrLn $ "job " <> showt jobId <> ": no known failures"
+logFailures :: Set Failure -> Spuriobot ()
+logFailures failures
+    | S.null failures = trace "no failures"
     | otherwise = forM_
         (S.toList failures) 
-        ( \(_, msg) ->
-            T.putStrLn $ "job " <> showt jobId <> ": " <> msg
-        )
+        ( \(_, msg) -> trace msg)
 
 -- writeFailuresToDB :: String -> String -> String -> [Failure] -> IO ()
 -- writeFailuresToDB jobDate jobWebUrl jobRunnerId failures = do
@@ -350,25 +380,23 @@ logFailures jobId failures
 --            ]
 --    values = map (\(code, (jobId, _)) -> (jobId, code, jobDate, jobWebUrl, jobRunnerId)) failures
 
-processBuildEvent :: Token -> GitLabBuildEvent -> IO ()
+processBuildEvent :: Token -> GitLabBuildEvent -> Spuriobot ()
 processBuildEvent apiToken GitLabBuildEvent{..} = do
     case glbBuildStatus of
         OtherBuildStatus x ->
-            T.putStrLn ("Skipping job " <> showt glbBuildId <> " with status '" <> x <> "'")
-        Success ->
-            T.putStrLn ("Skipping successful job " <> showt glbBuildId)
+            trace (x <> ":skipping")
         Failed -> processJob apiToken glbProjectId glbBuildId glbJobFailureReason
 
 -- | Characteristics of a job that we test against.
 data Jobbo = Jobbo (Maybe JobFailureReason) Text
 
-processJob :: Token -> ProjectId -> JobId -> Maybe JobFailureReason -> IO ()
+processJob :: Token -> ProjectId -> JobId -> Maybe JobFailureReason -> Spuriobot ()
 processJob apiToken glbProjectId glbBuildId glbJobFailureReason = do
     jobInfo <- fetchJobInfo apiToken glbProjectId glbBuildId
     logs <- fetchJobLogs apiToken (webUrl jobInfo)
     let jobbo = Jobbo glbJobFailureReason logs
     let failures = collectFailures jobbo
-    logFailures glbBuildId failures
+    logFailures failures
 
 -- TODO keep a persistent connection around rather than making a new one each time
 -- writeFailuresToDB glJobDate glJobWebURL glJobRunnerId failures
