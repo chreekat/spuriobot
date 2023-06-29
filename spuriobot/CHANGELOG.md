@@ -1,4 +1,4 @@
-# Changelog for `gitlab-webhook`
+# Changelog for `spuriobot`
 
 All notable changes to this project will be documented in this file.
 

@@ -23,6 +23,6 @@ main = do
         strApiToken ->
             case args of
                 [] -> run 8080 $ webhookApplication (textEncode strApiToken)
-                _ -> error "Usage: gitlab-webhook"
+                _ -> error "Usage: spuriobot"
   where
     textEncode = encodeUtf8 . T.pack

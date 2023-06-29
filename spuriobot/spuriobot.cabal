@@ -4,7 +4,7 @@ cabal-version: 3.0
 --
 -- see: https://github.com/sol/hpack
 
-name:           gitlab-webhook
+name:           spuriobot
 version:        0.1.0.0
 description:    Collect and report spurious CI failures by category
 author:         Chris Linton-Ford
@@ -21,7 +21,7 @@ library
   exposed-modules:
       SpuriousFailures
   other-modules:
-      Paths_gitlab_webhook
+      Paths_spuriobot
   hs-source-dirs:
       src
   default-extensions:
@@ -47,10 +47,10 @@ library
     , warp
   default-language: Haskell2010
 
-executable gitlab-webhook
+executable spuriobot
   main-is: Main.hs
   other-modules:
-      Paths_gitlab_webhook
+      Paths_spuriobot
   hs-source-dirs:
       app
   default-extensions:
@@ -61,7 +61,7 @@ executable gitlab-webhook
     , base >=4.7 && <5
     , bytestring
     , containers
-    , gitlab-webhook
+    , spuriobot
     , http-client
     , modern-uri
     , postgresql-simple
@@ -76,11 +76,11 @@ executable gitlab-webhook
     , warp
   default-language: Haskell2010
 
-test-suite gitlab-webhook-test
+test-suite spuriobot-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      Paths_gitlab_webhook
+      Paths_spuriobot
   hs-source-dirs:
       test
   default-extensions:
@@ -91,7 +91,7 @@ test-suite gitlab-webhook-test
     , base >=4.7 && <5
     , bytestring
     , containers
-    , gitlab-webhook
+    , spuriobot
     , hspec
     , http-client
     , modern-uri
