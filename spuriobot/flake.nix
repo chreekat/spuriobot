@@ -6,7 +6,9 @@
   outputs = { self, nixpkgs, ... }:
     let
       hsOverlay = pkgs: self: super: {
-        spuriobot = self.callCabal2nix "spuriobot" ./. {};
+        spuriobot = pkgs.haskell.lib.compose.disableExecutableProfiling
+          (pkgs.haskell.lib.compose.justStaticExecutables
+            (self.callCabal2nix "spuriobot" ./. {}));
       };
       myPkgs = import nixpkgs { system = "x86_64-linux"; overlays = [ self.overlays.default ]; };
     in {
