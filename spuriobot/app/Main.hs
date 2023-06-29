@@ -8,13 +8,16 @@ import System.Environment (
     getArgs,
     getEnv,
  )
-
 import Spuriobot
+import qualified Spuriobot.DB as DB
 
 main :: IO ()
 main = do
     -- Ensure journald gets our output
     hSetBuffering stdout NoBuffering
+
+    -- Fail early if the database connection doesn't work.
+    DB.close =<< DB.connect
 
     args <- getArgs
     envStrApiToken <- getEnv "GITLAB_API_TOKEN"
