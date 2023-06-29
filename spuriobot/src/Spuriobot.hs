@@ -358,9 +358,9 @@ collectFailures j = S.fromList (mapMaybe (runCheck j) (checkTimeout : checkLogs)
 
 logFailures :: Set Failure -> Spuriobot ()
 logFailures failures
-    | S.null failures = trace "no failures"
+    | S.null failures = trace "no known spurio"
     | otherwise = forM_
-        (S.toList failures) 
+        (S.toList failures)
         ( \(_, msg) -> trace msg)
 
 -- writeFailuresToDB :: String -> String -> String -> [Failure] -> IO ()
@@ -386,7 +386,7 @@ processBuildEvent apiToken GitLabBuildEvent{..} = do
     case glbBuildStatus of
         OtherBuildStatus x ->
             trace (x <> ":skipping")
-        Failed -> processJob apiToken glbProjectId glbBuildId glbJobFailureReason
+        Failed -> withTrace "failed" $ processJob apiToken glbProjectId glbBuildId glbJobFailureReason
 
 -- | Characteristics of a job that we test against.
 data Jobbo = Jobbo (Maybe JobFailureReason) Text
