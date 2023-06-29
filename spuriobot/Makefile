@@ -1,8 +1,11 @@
-.PHONY: build push push_inputs push_outputs push_shell
+.PHONY: test build push push_inputs push_outputs push_shell
 
 CACHIX_CONFIG ?= $(HOME)/.config/cachix/cachix.dhall
 CACHIX ?= cachix -c $(CACHIX_CONFIG)
 NIX ?= nix
+
+test:
+	cabal test
 
 build:
 	$(NIX) build
