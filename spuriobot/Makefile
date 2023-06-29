@@ -14,6 +14,6 @@ push_outputs:
 	$(NIX) build --json | jq -r '.[].outputs | to_entries[].value' | $(CACHIX) push spuriobot
 push_shell:
 	mkdir -p .nix-profiles
-	$(NIX) develop --profile .nix-profiles/dev-profile
+	$(NIX) develop --profile .nix-profiles/dev-profile -c true
 	$(CACHIX) push spuriobot .nix-profiles/dev-profile
 	
