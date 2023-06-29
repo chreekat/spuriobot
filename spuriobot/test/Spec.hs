@@ -14,7 +14,7 @@ import Test.Hspec (
     shouldSatisfy,
  )
 
-import SpuriousFailures
+import Spuriobot
 
 main :: IO ()
 main = hspec $ do

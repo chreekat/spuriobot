@@ -8,7 +8,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 
 {- |
-Module: SpuriousFailures
+Module: Spuriobot
 Description: Log spurious GHC GitLab build failures
 
 Overall flow of the application:
@@ -19,7 +19,7 @@ Overall flow of the application:
 - TODO: write results to database
 - TODO: tell the job to retry
 -}
-module SpuriousFailures (
+module Spuriobot (
     GitLabBuildEvent (..),
     collectFailures,
     webhookApplication,

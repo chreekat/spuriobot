@@ -9,7 +9,7 @@ import System.Environment (
     getEnv,
  )
 
-import SpuriousFailures
+import Spuriobot
 
 main :: IO ()
 main = do

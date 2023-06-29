@@ -19,7 +19,7 @@ extra-source-files:
 
 library
   exposed-modules:
-      SpuriousFailures
+      Spuriobot
   other-modules:
       Paths_spuriobot
   hs-source-dirs:
