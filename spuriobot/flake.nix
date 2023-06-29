@@ -19,7 +19,7 @@
 
         myShell = final.myHaskellPackages.shellFor {
           packages = pkgs: [ pkgs.spuriobot ];
-          buildInputs = [ myPkgs.haskell-language-server myPkgs.cachix ];
+          buildInputs = [ myPkgs.haskell-language-server myPkgs.cachix final.nil ];
         };
       };
       nixosModules.default = { config, lib, pkgs, ... }:
