@@ -83,10 +83,13 @@ import Servant (
  )
 import qualified Text.Regex.TDFA as Regex
 import Text.URI (mkURI)
-import TextShow (showt)
+
+showt :: Show a => a -> Text
+showt = T.pack . show
 
 (=~) :: Text -> Text -> Bool
 (=~) = (Regex.=~)
+
 --
 -- Gitlab API types and handlers
 --
