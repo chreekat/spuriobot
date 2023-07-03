@@ -22,12 +22,19 @@ Overall flow of the application:
 module Spuriobot (
     GitLabBuildEvent (..),
     collectFailures,
+    main,
     webhookApplication,
     webhookAPI,
     Check(..),
     Jobbo(..),
 ) where
 
+import Network.Wai.Handler.Warp (run)
+import System.IO (hSetBuffering, stdout, BufferMode(..))
+import System.Environment (
+    getArgs,
+    getEnv,
+ )
 import Control.Concurrent (forkIO)
 import Control.Exception (throwIO, Exception)
 import Control.Monad (
@@ -35,7 +42,7 @@ import Control.Monad (
     void,
  )
 import Control.Monad.Trans (MonadIO, liftIO)
-import Control.Monad.Reader (ReaderT(..), MonadReader (ask), withReaderT)
+import Control.Monad.Reader (ReaderT(..), MonadReader, withReaderT, asks)
 import Data.Aeson (
     FromJSON,
     ToJSON,
@@ -55,7 +62,7 @@ import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Text.Encoding (decodeUtf8)
+import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import qualified Data.Text.IO as T
 import Network.HTTP.Req (
     NoReqBody (..),
@@ -83,6 +90,37 @@ import Servant (
  )
 import qualified Text.Regex.TDFA as Regex
 import Text.URI (mkURI)
+import Database.PostgreSQL.Simple (Connection)
+import Data.Pool (Pool, withResource, createPool)
+import Data.Time (UTCTime)
+
+import qualified Spuriobot.DB as DB
+import Data.Int (Int64)
+
+main :: IO ()
+main = do
+    -- Ensure journald gets our output
+    hSetBuffering stdout NoBuffering
+
+    -- Fail early if the database connection doesn't work.
+    -- Actually, I need to set up the pool here and make sure it gets shared
+    -- among all requests. Right now, the pool is created afresh for each
+    -- request...
+    DB.close =<< DB.connect
+
+    args <- getArgs
+    envStrApiToken <- getEnv "GITLAB_API_TOKEN"
+    case envStrApiToken of
+        "" -> error "please set the GITLAB_API_TOKEN environment variable to a valid token string"
+        strApiToken ->
+            case args of
+                [] -> run 8080 $ webhookApplication (textEncode strApiToken)
+                _ -> error "Usage: spuriobot"
+  where
+    textEncode = encodeUtf8 . T.pack
+--
+-- Helpers
+--
 
 showt :: Show a => a -> Text
 showt = T.pack . show
@@ -195,7 +233,10 @@ webhookServer apiToken glBuildEvent = do
     -- Fork a thread to do the processing and immediately return a 'success' status
     -- code to the caller; see the recommendations from GitLab documentation:
     -- https://docs.gitlab.com/ee/user/project/integrations/webhooks.html#configure-your-webhook-receiver-endpoint
-    liftIO . void . forkIO $ (`runReaderT` "") $ runSpuriobot $ withTrace (showt (glbBuildId glBuildEvent)) $
+    let fiveMin = 60 * 5
+    pool <- liftIO $ createPool DB.connect DB.close 4 fiveMin 1
+    let ctx = SpuriobotContext "" pool
+    liftIO . void . forkIO $ (`runReaderT` ctx) $ runSpuriobot $ withTrace (showt (glbBuildId glBuildEvent)) $
         processBuildEvent
             apiToken
             glBuildEvent
@@ -214,18 +255,21 @@ webhookApplication strApiToken =
 -- Version 0 of tracing is running handlers in a context where there's a logging
 -- context we can use to decorate traces.
 
-newtype Spuriobot a = Spuriobot { runSpuriobot :: ReaderT Text IO a }
-    deriving newtype (Functor, Applicative, Monad, MonadReader Text, MonadIO)
+data SpuriobotContext = SpuriobotContext { traceContext :: Text, dbPool :: Pool Connection }
+
+newtype Spuriobot a = Spuriobot { runSpuriobot :: ReaderT SpuriobotContext IO a }
+    deriving newtype (Functor, Applicative, Monad, MonadReader SpuriobotContext, MonadIO)
 
 withTrace :: Text -> Spuriobot a -> Spuriobot a
-withTrace t_  = Spuriobot . withReaderT (addContext t_) . runSpuriobot
+withTrace t_  = Spuriobot . withReaderT (modifyTraceContext (addContext t_)) . runSpuriobot
     where
         addContext t old_t
             | T.null old_t = t
             | otherwise = old_t <> ":" <> t
+        modifyTraceContext f sc = sc { traceContext = f (traceContext sc) }
 
 trace :: Text -> Spuriobot ()
-trace t = withTrace t (liftIO . T.putStrLn =<< ask)
+trace t = withTrace t (liftIO . T.putStrLn =<< asks traceContext)
 
 --
 -- Controller logic

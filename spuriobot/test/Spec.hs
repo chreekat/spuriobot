@@ -1,4 +1,4 @@
-module Main (main) where
+module Main (Main.main) where
 
 import Data.Aeson
 import Data.Either (
