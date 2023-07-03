@@ -6,6 +6,8 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveAnyClass #-}
+-- Used for MonadConc:
+{-# LANGUAGE UndecidableInstances #-}
 
 {- |
 Module: Spuriobot
@@ -23,7 +25,6 @@ module Spuriobot (
     GitLabBuildEvent (..),
     collectFailures,
     main,
-    webhookApplication,
     webhookAPI,
     Check(..),
     Jobbo(..),
@@ -35,12 +36,13 @@ import System.Environment (
     getArgs,
     getEnv,
  )
-import Control.Concurrent (forkIO)
+import Control.Concurrent.Classy (fork, MonadConc)
 import Control.Exception (throwIO, Exception)
 import Control.Monad (
     forM_,
     void,
  )
+import Control.Monad.Catch (MonadThrow, MonadMask, MonadCatch)
 import Control.Monad.Trans (MonadIO, liftIO)
 import Control.Monad.Reader (ReaderT(..), MonadReader, withReaderT, asks)
 import Data.Aeson (
@@ -79,14 +81,15 @@ import Network.HTTP.Req (
  )
 import qualified Network.HTTP.Req as R
 import Servant (
-    Application,
     Handler,
     JSON,
     Post,
     Proxy (..),
     ReqBody,
+    Server,
+    hoistServer,
     serve,
-    (:>),
+    (:>), ServerT,
  )
 import qualified Text.Regex.TDFA as Regex
 import Text.URI (mkURI)
@@ -102,22 +105,31 @@ main = do
     -- Ensure journald gets our output
     hSetBuffering stdout NoBuffering
 
-    -- Fail early if the database connection doesn't work.
-    -- Actually, I need to set up the pool here and make sure it gets shared
-    -- among all requests. Right now, the pool is created afresh for each
-    -- request...
+    args <- getArgs
+    case args of
+        [] -> pure ()
+        (_:_) -> error "Usage: spuriobot"
+
+    strApiToken <- encodeUtf8 . T.pack <$> getEnv "GITLAB_API_TOKEN"
+
+    -- Die early if no DB connection. (Laziness in createPool bites us
+    -- otherwise.)
     DB.close =<< DB.connect
 
-    args <- getArgs
-    envStrApiToken <- getEnv "GITLAB_API_TOKEN"
-    case envStrApiToken of
-        "" -> error "please set the GITLAB_API_TOKEN environment variable to a valid token string"
-        strApiToken ->
-            case args of
-                [] -> run 8080 $ webhookApplication (textEncode strApiToken)
-                _ -> error "Usage: spuriobot"
-  where
-    textEncode = encodeUtf8 . T.pack
+    let fiveMin = 60 * 5
+    pool <- createPool DB.connect DB.close 4 fiveMin 1
+
+    run 8080 $ serve webhookAPI (mainServer strApiToken pool)
+
+spurioServer :: Token -> ServerT WebHookAPI Spuriobot
+spurioServer = jobEvent
+
+mainServer :: Token -> Pool Connection -> Server WebHookAPI
+mainServer tok pool = hoistServer webhookAPI (toHandler tok pool) (spurioServer tok)
+
+toHandler :: ByteString -> Pool Connection -> Spuriobot a -> Handler a
+toHandler tok pool (Spuriobot act) = liftIO $ runReaderT act (SpuriobotContext tok "" pool)
+
 --
 -- Helpers
 --
@@ -228,25 +240,16 @@ fetchJobInfo apiToken (ProjectId projectId) jobId = liftIO $ runReq defaultHttpC
 type WebHookAPI =
     ReqBody '[JSON] GitLabBuildEvent :> Post '[JSON] ()
 
-webhookServer :: Token -> GitLabBuildEvent -> Handler ()
-webhookServer apiToken glBuildEvent = do
-    -- Fork a thread to do the processing and immediately return a 'success' status
-    -- code to the caller; see the recommendations from GitLab documentation:
-    -- https://docs.gitlab.com/ee/user/project/integrations/webhooks.html#configure-your-webhook-receiver-endpoint
-    let fiveMin = 60 * 5
-    pool <- liftIO $ createPool DB.connect DB.close 4 fiveMin 1
-    let ctx = SpuriobotContext "" pool
-    liftIO . void . forkIO $ (`runReaderT` ctx) $ runSpuriobot $ withTrace (showt (glbBuildId glBuildEvent)) $
-        processBuildEvent
-            apiToken
-            glBuildEvent
-
 webhookAPI :: Proxy WebHookAPI
 webhookAPI = Proxy
 
-webhookApplication :: ByteString -> Application
-webhookApplication strApiToken =
-    serve webhookAPI $ webhookServer strApiToken
+jobEvent :: Token -> GitLabBuildEvent -> Spuriobot ()
+jobEvent apiToken glBuildEvent = do
+    -- Fork a thread to do the processing and immediately return a 'success' status
+    -- code to the caller; see the recommendations from GitLab documentation:
+    -- https://docs.gitlab.com/ee/user/project/integrations/webhooks.html#configure-your-webhook-receiver-endpoint
+
+    void $ fork $ withTrace (showt (glbBuildId glBuildEvent)) $ processBuildEvent apiToken glBuildEvent
 
 --
 -- Handler context setup
@@ -255,10 +258,10 @@ webhookApplication strApiToken =
 -- Version 0 of tracing is running handlers in a context where there's a logging
 -- context we can use to decorate traces.
 
-data SpuriobotContext = SpuriobotContext { traceContext :: Text, dbPool :: Pool Connection }
+data SpuriobotContext = SpuriobotContext { apiToken :: ByteString, traceContext :: Text, dbPool :: Pool Connection }
 
 newtype Spuriobot a = Spuriobot { runSpuriobot :: ReaderT SpuriobotContext IO a }
-    deriving newtype (Functor, Applicative, Monad, MonadReader SpuriobotContext, MonadIO)
+    deriving newtype (Functor, Applicative, Monad, MonadReader SpuriobotContext, MonadIO, MonadThrow, MonadCatch, MonadMask, MonadConc)
 
 withTrace :: Text -> Spuriobot a -> Spuriobot a
 withTrace t_  = Spuriobot . withReaderT (modifyTraceContext (addContext t_)) . runSpuriobot

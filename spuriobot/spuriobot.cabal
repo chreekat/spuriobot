@@ -32,7 +32,9 @@ library
       aeson
     , base >=4.7 && <5
     , bytestring
+    , concurrency
     , containers
+    , exceptions
     , resource-pool
     , http-client
     , modern-uri
