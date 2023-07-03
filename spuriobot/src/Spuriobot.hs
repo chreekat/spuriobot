@@ -6,6 +6,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE NamedFieldPuns #-}
 -- Used for MonadConc:
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -149,19 +150,24 @@ newtype ProjectId = ProjectId {unProjectId :: Int}
     deriving newtype (FromJSON, ToJSON)
 
 -- TODO convert to newtype when the fancy strikes
-type JobId = Int
+type JobId = Int64
 type JobWebURL = Text
 type Token = ByteString
 
 -- Sparse definition
-newtype JobInfo = JobInfo
+data JobInfo = JobInfo
     { webUrl :: JobWebURL
+    , runnerId :: Int64
+    , jobDate :: UTCTime
     }
     deriving (Show, Ord, Eq)
 
 instance FromJSON JobInfo where
     parseJSON = withObject "JobInfo" $ \o ->
-        JobInfo <$> o .: "web_url"
+        JobInfo
+            <$> o .: "web_url"
+            <*> (o .: "runner" >>= (.: "id"))
+            <*> o .: "created_at"
 
 -- | The known build statuses that we care about.
 data BuildStatus = Failed | OtherBuildStatus Text
@@ -178,7 +184,7 @@ instance ToJSON BuildStatus where
 
 -- BuildEvent is what the webhook receives
 data GitLabBuildEvent = GitLabBuildEvent
-    { glbBuildId :: Int
+    { glbBuildId :: Int64
     , glbBuildName :: Text
     , glbBuildStatus :: BuildStatus
     , glbProjectId :: ProjectId
@@ -275,6 +281,11 @@ withTrace t_  = Spuriobot . withReaderT (modifyTraceContext (addContext t_)) . r
 
 trace :: Text -> Spuriobot ()
 trace t = withTrace t (liftIO . T.putStrLn =<< asks traceContext)
+
+runDB :: (Connection -> IO a) -> Spuriobot a
+runDB db_act =
+    let run_ pool = liftIO $ withResource pool db_act
+    in withTrace "db" $ run_ =<< asks dbPool
 
 --
 -- Controller logic
@@ -414,24 +425,6 @@ logFailures failures
         (S.toList failures)
         ( \(_, msg) -> trace msg)
 
--- writeFailuresToDB :: String -> String -> String -> [Failure] -> IO ()
--- writeFailuresToDB jobDate jobWebUrl jobRunnerId failures = do
---    conn <- connectPostgreSQLWithEnvArgs
---    void $
---        executeMany
---            conn
---            dbString
---            values
---  where
---    dbString :: Query
---    dbString =
---        mconcat
---            [ "insert into ci_failure (job_id, type, job_date, web_url, runner_id)"
---            , "values (?,?,?,?,?)"
---            , "on conflict do nothing"
---            ]
---    values = map (\(code, (jobId, _)) -> (jobId, code, jobDate, jobWebUrl, jobRunnerId)) failures
-
 processBuildEvent :: GitLabBuildEvent -> Spuriobot ()
 processBuildEvent GitLabBuildEvent{..} = do
     case glbBuildStatus of
@@ -449,6 +442,9 @@ processJob glbProjectId glbBuildId glbJobFailureReason = do
     let jobbo = Jobbo glbJobFailureReason logs
     let failures = collectFailures jobbo
     logFailures failures
+    void $ runDB $ DB.insertFailures (mkDBFailures glbBuildId jobInfo (S.toList failures))
 
--- TODO keep a persistent connection around rather than making a new one each time
--- writeFailuresToDB glJobDate glJobWebURL glJobRunnerId failures
+mkDBFailures :: Functor f => Int64 -> JobInfo -> f Failure -> f DB.Failure
+mkDBFailures jobId JobInfo { jobDate, webUrl, runnerId } fails =
+    let mk (code, _) = DB.Failure jobId code jobDate webUrl runnerId
+    in fmap mk fails
