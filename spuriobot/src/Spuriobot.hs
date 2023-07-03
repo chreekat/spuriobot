@@ -121,11 +121,11 @@ main = do
 
     run 8080 $ serve webhookAPI (mainServer strApiToken pool)
 
-spurioServer :: Token -> ServerT WebHookAPI Spuriobot
+spurioServer :: ServerT WebHookAPI Spuriobot
 spurioServer = jobEvent
 
 mainServer :: Token -> Pool Connection -> Server WebHookAPI
-mainServer tok pool = hoistServer webhookAPI (toHandler tok pool) (spurioServer tok)
+mainServer tok pool = hoistServer webhookAPI (toHandler tok pool) spurioServer
 
 toHandler :: ByteString -> Pool Connection -> Spuriobot a -> Handler a
 toHandler tok pool (Spuriobot act) = liftIO $ runReaderT act (SpuriobotContext tok "" pool)
@@ -214,24 +214,26 @@ instance FromJSON JobFailureReason where
         f x = OtherReason x
 
 -- | Get /jobs/<job-id>
-fetchJobInfo :: Token -> ProjectId -> JobId -> Spuriobot JobInfo
-fetchJobInfo apiToken (ProjectId projectId) jobId = liftIO $ runReq defaultHttpConfig $ do
-    response <-
-        req
-            R.GET
-            ( https
-                "gitlab.haskell.org"
-                /: "api"
-                /: "v4"
-                /: "projects"
-                /: showt projectId
-                /: "jobs"
-                /: showt jobId
-            )
-            NoReqBody
-            jsonResponse
-            (headerRedacted "PRIVATE-TOKEN" apiToken)
-    pure (responseBody response)
+fetchJobInfo :: ProjectId -> JobId -> Spuriobot JobInfo
+fetchJobInfo (ProjectId projectId) jobId = do
+    tok <- asks apiToken
+    runReq defaultHttpConfig $ do
+        response <-
+            req
+                R.GET
+                ( https
+                    "gitlab.haskell.org"
+                    /: "api"
+                    /: "v4"
+                    /: "projects"
+                    /: showt projectId
+                    /: "jobs"
+                    /: showt jobId
+                )
+                NoReqBody
+                jsonResponse
+                (headerRedacted "PRIVATE-TOKEN" tok)
+        pure (responseBody response)
 
 --
 -- Servant boilerplate
@@ -243,13 +245,13 @@ type WebHookAPI =
 webhookAPI :: Proxy WebHookAPI
 webhookAPI = Proxy
 
-jobEvent :: Token -> GitLabBuildEvent -> Spuriobot ()
-jobEvent apiToken glBuildEvent = do
+jobEvent :: GitLabBuildEvent -> Spuriobot ()
+jobEvent glBuildEvent = do
     -- Fork a thread to do the processing and immediately return a 'success' status
     -- code to the caller; see the recommendations from GitLab documentation:
     -- https://docs.gitlab.com/ee/user/project/integrations/webhooks.html#configure-your-webhook-receiver-endpoint
 
-    void $ fork $ withTrace (showt (glbBuildId glBuildEvent)) $ processBuildEvent apiToken glBuildEvent
+    void $ fork $ withTrace (showt (glbBuildId glBuildEvent)) $ processBuildEvent glBuildEvent
 
 --
 -- Handler context setup
@@ -283,8 +285,8 @@ data SpuriobotException = ParseUrlFail
     deriving anyclass Exception
 
 -- | Get the raw job trace.
-fetchJobLogs :: Token -> JobWebURL -> Spuriobot Text
-fetchJobLogs apiToken jobWebURL = do
+fetchJobLogs :: JobWebURL -> Spuriobot Text
+fetchJobLogs jobWebURL = do
     let mbUri = do
             uri <- mkURI (jobWebURL <> "/raw")
             (uri', _) <- useHttpsURI uri
@@ -296,18 +298,20 @@ fetchJobLogs apiToken jobWebURL = do
         Nothing -> do
             trace $ "error: could not parse URL: " <> jobWebURL
             liftIO $ throwIO ParseUrlFail
-        Just uri -> runReq defaultHttpConfig $ do
-            -- TODO handle redirect to login which is gitlab's way of saying 404
-            -- if re.search('users/sign_in$', resp.url):
-            response <-
-                req
-                    R.GET
-                    uri
-                    NoReqBody
-                    bsResponse
-                    (headerRedacted "PRIVATE-TOKEN" apiToken)
+        Just uri -> do
+            tok <- asks apiToken
+            runReq defaultHttpConfig $ do
+                -- TODO handle redirect to login which is gitlab's way of saying 404
+                -- if re.search('users/sign_in$', resp.url):
+                response <-
+                    req
+                        R.GET
+                        uri
+                        NoReqBody
+                        bsResponse
+                        (headerRedacted "PRIVATE-TOKEN" tok)
 
-            liftIO . pure . decodeUtf8 . responseBody $ response
+                pure . decodeUtf8 . responseBody $ response
 
 -- the code that we inject into the database
 type FailureErrorCode = Text
@@ -428,20 +432,20 @@ logFailures failures
 --            ]
 --    values = map (\(code, (jobId, _)) -> (jobId, code, jobDate, jobWebUrl, jobRunnerId)) failures
 
-processBuildEvent :: Token -> GitLabBuildEvent -> Spuriobot ()
-processBuildEvent apiToken GitLabBuildEvent{..} = do
+processBuildEvent :: GitLabBuildEvent -> Spuriobot ()
+processBuildEvent GitLabBuildEvent{..} = do
     case glbBuildStatus of
         OtherBuildStatus x ->
             trace (x <> ":skipping")
-        Failed -> withTrace "failed" $ processJob apiToken glbProjectId glbBuildId glbJobFailureReason
+        Failed -> withTrace "failed" $ processJob glbProjectId glbBuildId glbJobFailureReason
 
 -- | Characteristics of a job that we test against.
 data Jobbo = Jobbo (Maybe JobFailureReason) Text
 
-processJob :: Token -> ProjectId -> JobId -> Maybe JobFailureReason -> Spuriobot ()
-processJob apiToken glbProjectId glbBuildId glbJobFailureReason = do
-    jobInfo <- fetchJobInfo apiToken glbProjectId glbBuildId
-    logs <- fetchJobLogs apiToken (webUrl jobInfo)
+processJob :: ProjectId -> JobId -> Maybe JobFailureReason -> Spuriobot ()
+processJob glbProjectId glbBuildId glbJobFailureReason = do
+    jobInfo <- fetchJobInfo glbProjectId glbBuildId
+    logs <- fetchJobLogs (webUrl jobInfo)
     let jobbo = Jobbo glbJobFailureReason logs
     let failures = collectFailures jobbo
     logFailures failures
