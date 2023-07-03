@@ -7,9 +7,9 @@ export NIX="nix --extra-experimental-features nix-command --extra-experimental-f
 
 case "$1" in
     "spuriobot_nix_build")
-        make -C gitlab-webhook build
+        make -C spuriobot build
         ;;
     "spuriobot_nix_build_and_cachix_push")
-        make -C gitlab-webhook push
+        make -C spuriobot push
         ;;
 esac
