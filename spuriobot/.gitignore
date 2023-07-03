@@ -2,3 +2,4 @@ result
 *.swp
 .stack-work
 .nix-profiles
+.postgres-work
