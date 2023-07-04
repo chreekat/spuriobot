@@ -48,7 +48,9 @@ db_exists := psql -lqt | cut -f1 -d \| | grep -qw
 
 db: database
 
-database: db.service ; $(db_exists) $(PGDATABASE) || createdb $(PGDATABASE)
+database: db.service
+	$(db_exists) $(PGDATABASE) || createdb $(PGDATABASE)
+	psql < db-schema.sql
 
 db.service: db.cluster ; $(pg_isready) || $(pg_start)
 
@@ -62,4 +64,4 @@ $(cluster_sentinel):
 
 db.isrunning: ; $(pg_isready)
 db.stop: ; -$(pg_isready) && $(pg_ctl) stop
-db.clean: stop ; rm -rf $(PGDATA)
+db.clean: db.stop ; rm -rf $(PGDATA)
