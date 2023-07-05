@@ -78,7 +78,7 @@ import Network.HTTP.Req (
     responseBody,
     runReq,
     useHttpsURI,
-    (/:),
+    (/:), (/~),
  )
 import qualified Network.HTTP.Req as R
 import Servant (
@@ -223,23 +223,21 @@ instance FromJSON JobFailureReason where
 fetchJobInfo :: ProjectId -> JobId -> Spuriobot JobInfo
 fetchJobInfo (ProjectId projectId) jobId = do
     tok <- asks apiToken
-    runReq defaultHttpConfig $ do
-        response <-
-            req
-                R.GET
-                ( https
-                    "gitlab.haskell.org"
-                    /: "api"
-                    /: "v4"
-                    /: "projects"
-                    /: showt projectId
-                    /: "jobs"
-                    /: showt jobId
-                )
-                NoReqBody
-                jsonResponse
-                (headerRedacted "PRIVATE-TOKEN" tok)
-        pure (responseBody response)
+    fmap responseBody $ runReq defaultHttpConfig $
+        req
+            R.GET
+            ( https
+                "gitlab.haskell.org"
+                /: "api"
+                /: "v4"
+                /: "projects"
+                /~ projectId
+                /: "jobs"
+                /~ jobId
+            )
+            NoReqBody
+            jsonResponse
+            (headerRedacted "PRIVATE-TOKEN" tok)
 
 --
 -- Servant boilerplate
