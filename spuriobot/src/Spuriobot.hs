@@ -251,12 +251,13 @@ type WebHookAPI =
 webhookAPI :: Proxy WebHookAPI
 webhookAPI = Proxy
 
+-- | This turns the job processor into a webhook endpoint by immediately forking
+-- to do the real work.
+--
+-- See the recommendations from GitLab documentation:
+-- https://docs.gitlab.com/ee/user/project/integrations/webhooks.html#configure-your-webhook-receiver-endpoint
 jobEvent :: GitLabBuildEvent -> Spuriobot ()
-jobEvent glBuildEvent = do
-    -- Fork a thread to do the processing and immediately return a 'success' status
-    -- code to the caller; see the recommendations from GitLab documentation:
-    -- https://docs.gitlab.com/ee/user/project/integrations/webhooks.html#configure-your-webhook-receiver-endpoint
-
+jobEvent glBuildEvent =
     void $ fork $ withTrace (showt (glbBuildId glBuildEvent)) $ processBuildEvent glBuildEvent
 
 --
@@ -271,6 +272,7 @@ data SpuriobotContext = SpuriobotContext { apiToken :: ByteString, traceContext 
 newtype Spuriobot a = Spuriobot { runSpuriobot :: ReaderT SpuriobotContext IO a }
     deriving newtype (Functor, Applicative, Monad, MonadReader SpuriobotContext, MonadIO, MonadThrow, MonadCatch, MonadMask, MonadConc)
 
+-- | Spuriobot combinator that adds to the trace context.
 withTrace :: Text -> Spuriobot a -> Spuriobot a
 withTrace t_  = Spuriobot . withReaderT (modifyTraceContext (addContext t_)) . runSpuriobot
     where
@@ -282,6 +284,7 @@ withTrace t_  = Spuriobot . withReaderT (modifyTraceContext (addContext t_)) . r
 trace :: Text -> Spuriobot ()
 trace t = withTrace t (liftIO . T.putStrLn =<< asks traceContext)
 
+-- | Spuriobot action that runs a database action.
 runDB :: (Connection -> IO a) -> Spuriobot a
 runDB db_act =
     let run_ pool = liftIO $ withResource pool db_act
@@ -303,7 +306,7 @@ fetchJobLogs jobWebURL = do
             (uri', _) <- useHttpsURI uri
             pure uri'
     case mbUri of
-        -- this error will only terminate the forked processJob thread, so the
+        -- this error will only terminate the forked processFailure thread, so the
         -- main process should keep listening and handling requests
         -- FIXME: use throwError in the Handler monad
         Nothing -> do
@@ -425,8 +428,10 @@ logFailures failures
         (S.toList failures)
         ( \(_, msg) -> trace msg)
 
+-- | Top-level handler for the GitLab job event
+-- https://docs.gitlab.com/ee/user/project/integrations/webhook_events.html#job-events
 processBuildEvent :: GitLabBuildEvent -> Spuriobot ()
-processBuildEvent GitLabBuildEvent{..} = do
+processBuildEvent GitLabBuildEvent{..} =
     case glbBuildStatus of
         OtherBuildStatus x ->
             trace (x <> ":skipping")
@@ -435,8 +440,9 @@ processBuildEvent GitLabBuildEvent{..} = do
 -- | Characteristics of a job that we test against.
 data Jobbo = Jobbo (Maybe JobFailureReason) Text
 
-processJob :: ProjectId -> JobId -> Maybe JobFailureReason -> Spuriobot ()
-processJob glbProjectId glbBuildId glbJobFailureReason = do
+-- | Given a failed job, deal with spurios (if any)
+processFailure :: ProjectId -> JobId -> Maybe JobFailureReason -> Spuriobot ()
+processFailure glbProjectId glbBuildId glbJobFailureReason = do
     jobInfo <- fetchJobInfo glbProjectId glbBuildId
     logs <- fetchJobLogs (webUrl jobInfo)
     let jobbo = Jobbo glbJobFailureReason logs
@@ -444,6 +450,7 @@ processJob glbProjectId glbBuildId glbJobFailureReason = do
     logFailures failures
     void $ runDB $ DB.insertFailures (mkDBFailures glbBuildId jobInfo (S.toList failures))
 
+-- | Map between our types and the DB's types
 mkDBFailures :: Functor f => Int64 -> JobInfo -> f Failure -> f DB.Failure
 mkDBFailures jobId JobInfo { jobDate, webUrl, runnerId } fails =
     let mk (code, _) = DB.Failure jobId code jobDate webUrl runnerId
