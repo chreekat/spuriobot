@@ -37,13 +37,9 @@ import System.Environment (
     getArgs,
     getEnv,
  )
+import Control.Concurrent.Async (race_)
 import Control.Concurrent.Classy (fork, MonadConc)
-import Control.Exception (throwIO, Exception)
-import Control.Monad (
-    forM_,
-    void,
- )
-import Control.Monad.Catch (MonadThrow, MonadMask, MonadCatch)
+import Control.Monad.Catch (MonadThrow, MonadMask, MonadCatch, finally, Exception)
 import Control.Monad.Trans (MonadIO, liftIO)
 import Control.Monad.Reader (ReaderT(..), MonadReader, withReaderT, asks)
 import Data.Aeson (
@@ -60,13 +56,14 @@ import Data.Aeson (
  )
 import qualified Data.Aeson as Aeson
 import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
+import qualified Data.Map as M
 import Data.Maybe (mapMaybe)
 import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
-import qualified Data.Text.IO as T
 import Network.HTTP.Req (
     NoReqBody (..),
     bsResponse,
@@ -82,7 +79,6 @@ import Network.HTTP.Req (
  )
 import qualified Network.HTTP.Req as R
 import Servant (
-    Handler,
     JSON,
     Post,
     Proxy (..),
@@ -100,6 +96,9 @@ import Data.Time (UTCTime)
 
 import qualified Spuriobot.DB as DB
 import Data.Int (Int64)
+import Control.Monad
+import Control.Exception (throwIO)
+import Control.Concurrent (Chan, writeChan, readChan, newChan)
 
 main :: IO ()
 main = do
@@ -120,16 +119,20 @@ main = do
     let fiveMin = 60 * 5
     pool <- createPool DB.connect DB.close 4 fiveMin 1
 
-    run 8080 $ serve webhookAPI (mainServer strApiToken pool)
+    chan <- newChan
+
+    race_
+        (runSpuriobot strApiToken pool chan retryService)
+        (run 8080 $ serve webhookAPI (mainServer strApiToken pool chan))
 
 spurioServer :: ServerT WebHookAPI Spuriobot
 spurioServer = jobEvent
 
-mainServer :: Token -> Pool Connection -> Server WebHookAPI
-mainServer tok pool = hoistServer webhookAPI (toHandler tok pool) spurioServer
+mainServer :: Token -> Pool Connection -> RetryChan -> Server WebHookAPI
+mainServer tok pool chan = hoistServer webhookAPI (runSpuriobot tok pool chan) spurioServer
 
-toHandler :: ByteString -> Pool Connection -> Spuriobot a -> Handler a
-toHandler tok pool (Spuriobot act) = liftIO $ runReaderT act (SpuriobotContext tok "" pool)
+runSpuriobot :: MonadIO m => ByteString -> Pool Connection -> RetryChan -> Spuriobot a -> m a
+runSpuriobot tok pool chan (Spuriobot act) = liftIO $ runReaderT act (SpuriobotContext tok "" pool chan)
 
 --
 -- Helpers
@@ -240,6 +243,80 @@ fetchJobInfo (ProjectId projectId) jobId = do
             (headerRedacted "PRIVATE-TOKEN" tok)
 
 --
+-- Retry handling
+--
+
+type RetryChan = Chan RetryAction
+type RetryMap = M.Map JobId Word
+
+data RetryAction = RetryAction JobId RetryCmd
+data RetryCmd = Retry ProjectId | Clear
+
+clearRetry :: JobId -> Spuriobot ()
+clearRetry jobId = do
+    chan <- asks retryChan
+    liftIO $ writeChan chan (RetryAction jobId Clear)
+
+retryJob :: ProjectId -> JobId -> Spuriobot ()
+retryJob projId jobId = do
+    chan <- asks retryChan
+    liftIO $ writeChan chan (RetryAction jobId (Retry projId))
+
+-- | This is an action that continually pulls from the chan and handles the
+-- actions.
+retryService :: Spuriobot a
+retryService = loop M.empty where
+    maxRetries = 10
+
+    loop :: RetryMap -> Spuriobot a
+    loop retryMap = do
+        RetryAction jobId cmd <- liftIO . readChan =<< asks retryChan
+        -- A job that hasn't been retried isn't in the map, so we return 0
+        let retryCount = M.findWithDefault 0 jobId retryMap
+        -- We're done with this entry now
+        let retryMap' = M.delete jobId retryMap
+        loop =<< handleCmd jobId retryMap' retryCount cmd
+
+    handleCmd jobId retryMap retryCount cmd = do
+        case cmd of
+            Clear -> pure retryMap
+            Retry projId ->
+                if retryCount < maxRetries
+                then do
+                    newId <- retry_job projId jobId
+                    trace $ "retried as job: " <> showt newId
+                    pure (M.insert newId (retryCount + 1) retryMap)
+                else do
+                    trace "exceeded max retries"
+                    pure retryMap
+
+    retry_job :: ProjectId -> JobId -> Spuriobot JobId
+    retry_job (ProjectId projectId) jobId = do
+
+        let retryUrl =
+                https "gitlab.haskell.org"
+                    /: "api"
+                    /: "v4"
+                    /: "projects"
+                    /~ projectId
+                    /: "jobs"
+                    /~ jobId
+                    /: "retry"
+
+        tok <- asks apiToken
+        fmap (retryJobId . responseBody) $ runReq defaultHttpConfig $
+            req
+                R.POST
+                retryUrl
+                NoReqBody
+                jsonResponse
+                (headerRedacted "PRIVATE-TOKEN" tok)
+
+newtype RetryResult = RetryResult { retryJobId :: Int64 }
+    deriving newtype (FromJSON)
+
+
+--
 -- Servant boilerplate
 --
 
@@ -265,22 +342,29 @@ jobEvent glBuildEvent =
 -- Version 0 of tracing is running handlers in a context where there's a logging
 -- context we can use to decorate traces.
 
-data SpuriobotContext = SpuriobotContext { apiToken :: ByteString, traceContext :: Text, dbPool :: Pool Connection }
+data SpuriobotContext = SpuriobotContext
+    { apiToken :: ByteString
+    , traceContext :: Text
+    , dbPool :: Pool Connection
+    , retryChan :: RetryChan
+    }
 
-newtype Spuriobot a = Spuriobot { runSpuriobot :: ReaderT SpuriobotContext IO a }
+newtype Spuriobot a = Spuriobot { unSpuriobot :: ReaderT SpuriobotContext IO a }
     deriving newtype (Functor, Applicative, Monad, MonadReader SpuriobotContext, MonadIO, MonadThrow, MonadCatch, MonadMask, MonadConc)
 
 -- | Spuriobot combinator that adds to the trace context.
 withTrace :: Text -> Spuriobot a -> Spuriobot a
-withTrace t_  = Spuriobot . withReaderT (modifyTraceContext (addContext t_)) . runSpuriobot
+withTrace t_  = Spuriobot . withReaderT (modifyTraceContext (addContext t_)) . unSpuriobot
     where
         addContext t old_t
             | T.null old_t = t
             | otherwise = old_t <> ":" <> t
         modifyTraceContext f sc = sc { traceContext = f (traceContext sc) }
 
+-- | Spuriobot action that prints a trace message in the current trace context.
+-- Uses BS.putStr to prevent interleaving.
 trace :: Text -> Spuriobot ()
-trace t = withTrace t (liftIO . T.putStrLn =<< asks traceContext)
+trace t = withTrace t (liftIO . BS.putStr . encodeUtf8  =<< asks traceContext)
 
 -- | Spuriobot action that runs a database action.
 runDB :: (Connection -> IO a) -> Spuriobot a
@@ -431,9 +515,15 @@ logFailures failures
 processBuildEvent :: GitLabBuildEvent -> Spuriobot ()
 processBuildEvent GitLabBuildEvent{..} =
     case glbBuildStatus of
-        OtherBuildStatus x ->
-            trace (x <> ":skipping")
-        Failed -> withTrace "failed" $ processJob glbProjectId glbBuildId glbJobFailureReason
+        OtherBuildStatus x -> do
+            withTrace x (trace "skipping")
+        Failed -> withTrace "failed" $ processFailure glbProjectId glbBuildId glbJobFailureReason
+    -- We track retries by tracking *new* jobs, which means now is the time to
+    -- clear the present job. Doing it here means we don't have to do it
+    -- anywhere else, either, since we get notified about all job lifecycle
+    -- events.
+    `finally`
+    clearRetry glbBuildId
 
 -- | Characteristics of a job that we test against.
 data Jobbo = Jobbo (Maybe JobFailureReason) Text
@@ -447,6 +537,8 @@ processFailure glbProjectId glbBuildId glbJobFailureReason = do
     let failures = collectFailures jobbo
     logFailures failures
     void $ runDB $ DB.insertFailures (mkDBFailures glbBuildId jobInfo (S.toList failures))
+    unless (S.null failures) $
+        withTrace "retrying" $ retryJob glbProjectId glbBuildId
 
 -- | Map between our types and the DB's types
 mkDBFailures :: Functor f => Int64 -> JobInfo -> f Failure -> f DB.Failure
