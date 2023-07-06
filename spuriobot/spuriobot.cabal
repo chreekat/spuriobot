@@ -31,6 +31,8 @@ library
   build-depends:
       aeson
     , async
+    , attoparsec
+    , attoparsec-iso8601
     , base >=4.7 && <5
     , bytestring
     , concurrency

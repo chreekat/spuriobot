@@ -50,6 +50,9 @@ import Data.Aeson (
     (.:),
     (.:?), ToJSON, toJSON, encode
  )
+import qualified Data.Aeson.Types as Aeson
+import qualified Data.Attoparsec.Text as AttoText
+import qualified Data.Attoparsec.Time as Atto
 import Data.ByteString (ByteString, toStrict)
 import qualified Data.ByteString as BS
 import qualified Data.Map as M
@@ -93,6 +96,7 @@ import Data.Int (Int64)
 import Control.Monad
 import Control.Exception (throwIO)
 import Control.Concurrent (Chan, writeChan, readChan, newChan)
+import Data.Time.LocalTime (localTimeToUTC, utc)
 
 import qualified Spuriobot.DB as DB
 import GHC.Generics (Generic)
@@ -141,9 +145,35 @@ showt = T.pack . show
 (=~) :: Text -> Text -> Bool
 (=~) = (Regex.=~)
 
+
+
 --
--- Gitlab API types and handlers
+-- GitLab API types and handlers
 --
+
+-- | GitLab has a non-standard time format in the build events.
+-- "2022-12-22 09:30:51 UTC"
+newtype GitLabTime = GitLabTime UTCTime
+    deriving (Eq, Show)
+    deriving newtype ToJSON
+
+instance FromJSON GitLabTime where
+    parseJSON = withText "GitLabTime" (runAtto attoParseGitLabTime)
+        where
+        -- | Run an attoparsec parser as an aeson parser.
+        -- Copied from aeson's (internal) Data.Aeson.Parser.Time.
+        runAtto :: AttoText.Parser a -> Text -> Aeson.Parser a
+        runAtto p t = case AttoText.parseOnly (p <* AttoText.endOfInput) t of
+                    Left err -> fail $ "could not parse date: " ++ err
+                    Right r  -> return r
+
+
+-- | Parses "2022-12-22 09:30:51 UTC" as UTCTime
+attoParseGitLabTime :: AttoText.Parser GitLabTime
+attoParseGitLabTime = fmap GitLabTime $ do
+    localtime <- Atto.localTime
+    _ <- AttoText.string " UTC"
+    pure $ localTimeToUTC utc localtime
 
 newtype ProjectId = ProjectId {unProjectId :: Int}
     deriving stock (Show, Ord, Eq)
@@ -205,7 +235,7 @@ data GitLabBuildEvent = GitLabBuildEvent
     { glbBuildId :: Int64
     , glbBuildStatus :: BuildStatus
     , glbProjectId :: ProjectId
-    , glbFinishedAt :: Maybe UTCTime
+    , glbFinishedAt :: Maybe GitLabTime
     }
     deriving stock (Show, Eq, Generic)
 
