@@ -44,15 +44,11 @@ import Control.Monad.Trans (MonadIO, liftIO)
 import Control.Monad.Reader (ReaderT(..), MonadReader, withReaderT, asks)
 import Data.Aeson (
     FromJSON,
-    ToJSON,
-    object,
     parseJSON,
-    toJSON,
     withObject,
     withText,
     (.:),
     (.:?),
-    (.=),
  )
 import qualified Data.Aeson as Aeson
 import Data.ByteString (ByteString)
@@ -150,7 +146,7 @@ showt = T.pack . show
 
 newtype ProjectId = ProjectId {unProjectId :: Int}
     deriving stock (Show, Ord, Eq)
-    deriving newtype (FromJSON, ToJSON)
+    deriving newtype (FromJSON)
 
 -- TODO convert to newtype when the fancy strikes
 type JobId = Int64
@@ -181,10 +177,6 @@ instance FromJSON BuildStatus where
         f "failed" = Failed
         f x = OtherBuildStatus x
 
-instance ToJSON BuildStatus where
-    toJSON Failed = Aeson.String "failed"
-    toJSON (OtherBuildStatus x) = Aeson.String x
-
 -- BuildEvent is what the webhook receives
 data GitLabBuildEvent = GitLabBuildEvent
     { glbBuildId :: Int64
@@ -203,15 +195,6 @@ instance FromJSON GitLabBuildEvent where
             <*> v .: "build_status"
             <*> v .: "project_id"
             <*> v .:? "failure_reason"
-
-instance ToJSON GitLabBuildEvent where
-    toJSON x =
-        object
-            [ "build_id" .= glbBuildId x
-            , "build_name" .= glbBuildName x
-            , "build_status" .= glbBuildStatus x
-            , "project_id" .= glbProjectId x
-            ]
 
 data JobFailureReason = JobTimeout | JobStuck | OtherReason Text
     deriving (Eq, Show)
