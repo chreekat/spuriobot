@@ -198,6 +198,7 @@ data GitLabBuildEvent = GitLabBuildEvent
     { glbBuildId :: Int64
     , glbBuildStatus :: BuildStatus
     , glbProjectId :: ProjectId
+    , glbFinishedAt :: Maybe UTCTime
     }
     deriving (Show, Eq)
 
@@ -207,6 +208,7 @@ instance FromJSON GitLabBuildEvent where
             <$> v .: "build_id"
             <*> v .: "build_status"
             <*> v .: "project_id"
+            <*> v .: "build_finished_at"
 
 -- | Get /jobs/<job-id>
 fetchJobInfo :: ProjectId -> JobId -> Spuriobot JobInfo
@@ -516,17 +518,17 @@ logFailures failures
 -- | Top-level handler for the GitLab job event
 -- https://docs.gitlab.com/ee/user/project/integrations/webhook_events.html#job-events
 processBuildEvent :: GitLabBuildEvent -> Spuriobot ()
-processBuildEvent GitLabBuildEvent{..} =
-    case glbBuildStatus of
-        OtherBuildStatus x -> do
-            withTrace x (trace "skipping")
-        Failed -> withTrace "failed" $ processFailure glbProjectId glbBuildId glbJobFailureReason
-    -- We track retries by tracking *new* jobs, which means now is the time to
-    -- clear the present job. Doing it here means we don't have to do it
-    -- anywhere else, either, since we get notified about all job lifecycle
-    -- events.
-    `finally`
-    clearRetry glbBuildId
+processBuildEvent ev =
+    case glbFinishedAt ev of
+        Nothing -> trace "skipping unfinished job"
+        -- FIXME explain use of clearRetry here.
+        Just _ -> withTrace "finished" $ processFinishedJob ev `finally` clearRetry (glbBuildId ev)
+
+processFinishedJob :: GitLabBuildEvent -> Spuriobot ()
+processFinishedJob ev = do
+    case glbBuildStatus ev of
+        OtherBuildStatus x -> trace (x <> " is not a failure")
+        Failed -> withTrace "failed" $ processFailure ev
 
 -- | Characteristics of a job that we test against.
 data Jobbo = Jobbo (Maybe JobFailureReason) Text
