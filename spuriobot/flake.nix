@@ -37,6 +37,23 @@
                 (FIXME: Use LoadCredential instead.)
               '';
             };
+
+            database = lib.mkOption {
+              type = lib.types.str;
+              description = ''
+                Name of the Postgresql database to connect to.
+
+                You can also skip this and just set PGDATABASE in the
+                environment via the `envFile` option.
+
+                **The database must already exist. The table 'ci_failure' must
+                already exist within it. And the user 'spuriobot' must
+                have write access to that table.**
+
+                (FIXME: The above)
+              '';
+            };
+          };
         in {
           options.services.spuriobot = lib.mkOption {
             type = lib.types.attrsOf (lib.types.submodule botOptions);
@@ -67,13 +84,16 @@
                 # If we stop supporting NixOS < 23.05, we can get rid of all
                 # this.
                 ExecStart = pkgs.lib.getExe myPkgs.myHaskellPackages.spuriobot;
+                environment = {
+                  PGDATABASE = cfg.database;
+                };
                 EnvironmentFile = cfg.envFile;
                 User = "spuriobot";
                 DynamicUser = "yes";
               };
             };
           };
-      };
+        };
 
       devShells.x86_64-linux.default = myPkgs.myShell;
       packages.x86_64-linux.default = myPkgs.myHaskellPackages.spuriobot;
