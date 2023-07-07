@@ -1,6 +1,5 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE DerivingStrategies #-}
@@ -50,7 +49,6 @@ import Data.Aeson (
     (.:),
     (.:?),
  )
-import qualified Data.Aeson as Aeson
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.Map as M
@@ -89,12 +87,12 @@ import Text.URI (mkURI)
 import Database.PostgreSQL.Simple (Connection)
 import Data.Pool (Pool, withResource, createPool)
 import Data.Time (UTCTime)
-
-import qualified Spuriobot.DB as DB
 import Data.Int (Int64)
 import Control.Monad
 import Control.Exception (throwIO)
 import Control.Concurrent (Chan, writeChan, readChan, newChan)
+
+import qualified Spuriobot.DB as DB
 
 main :: IO ()
 main = do
@@ -153,13 +151,19 @@ type JobId = Int64
 type JobWebURL = Text
 type Token = ByteString
 
--- Sparse definition
+-- | The data we get from the /job API endpoint.
+--
+-- Most of what we need could come from the BuildEvent, but the web_url in
+-- particular is missing, so it's not sufficient for our use.
+--
+-- Informally, we use BuildEvent to decide whether or not to check the job for
+-- failures, and the /job endpoint for everything else.
 data JobInfo = JobInfo
     { webUrl :: JobWebURL
     , runnerId :: Int64
     , jobDate :: UTCTime
     }
-    deriving (Show, Ord, Eq)
+    deriving (Show, Eq)
 
 instance FromJSON JobInfo where
     parseJSON = withObject "JobInfo" $ \o ->
@@ -177,10 +181,9 @@ instance FromJSON BuildStatus where
         f "failed" = Failed
         f x = OtherBuildStatus x
 
--- BuildEvent is what the webhook receives
+-- | BuildEvent is what the webhook receives
 data GitLabBuildEvent = GitLabBuildEvent
     { glbBuildId :: Int64
-    , glbBuildName :: Text
     , glbBuildStatus :: BuildStatus
     , glbProjectId :: ProjectId
     , glbJobFailureReason :: Maybe JobFailureReason
@@ -191,7 +194,6 @@ instance FromJSON GitLabBuildEvent where
     parseJSON = withObject "GitLabBuildEvent" $ \v ->
         GitLabBuildEvent
             <$> v .: "build_id"
-            <*> v .: "build_name"
             <*> v .: "build_status"
             <*> v .: "project_id"
             <*> v .:? "failure_reason"
@@ -224,6 +226,9 @@ fetchJobInfo (ProjectId projectId) jobId = do
             NoReqBody
             jsonResponse
             (headerRedacted "PRIVATE-TOKEN" tok)
+
+
+
 
 --
 -- Retry handling
@@ -299,6 +304,10 @@ newtype RetryResult = RetryResult { retryJobId :: Int64 }
     deriving newtype (FromJSON)
 
 
+
+
+
+
 --
 -- Servant boilerplate
 --
@@ -317,6 +326,9 @@ webhookAPI = Proxy
 jobEvent :: GitLabBuildEvent -> Spuriobot ()
 jobEvent glBuildEvent =
     void $ fork $ withTrace (showt (glbBuildId glBuildEvent)) $ processBuildEvent glBuildEvent
+
+
+
 
 --
 -- Handler context setup
@@ -354,6 +366,13 @@ runDB :: (Connection -> IO a) -> Spuriobot a
 runDB db_act =
     let run_ pool = liftIO $ withResource pool db_act
     in withTrace "db" $ run_ =<< asks dbPool
+
+
+
+
+
+
+
 
 --
 -- Controller logic
