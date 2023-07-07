@@ -1,6 +1,6 @@
-DO $$ 
-BEGIN 
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ci_failure_t') THEN 
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ci_failure_t') THEN
         create type ci_failure_t as enum (
             'type',
             'submodule_clone',
@@ -32,5 +32,6 @@ create table if not exists ci_failure (
     type ci_failure_t NULL,
     job_date timestamp with time zone NULL,
     web_url text NULL,
-    runner_id bigint NULL
+    runner_id bigint NULL,
+    constraint unique_job_failure unique (job_id, type)
 );
