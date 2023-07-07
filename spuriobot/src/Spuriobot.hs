@@ -8,6 +8,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 -- Used for MonadConc:
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 {- |
 Module: Spuriobot
@@ -47,9 +48,9 @@ import Data.Aeson (
     withObject,
     withText,
     (.:),
-    (.:?),
+    (.:?), ToJSON, toJSON, encode
  )
-import Data.ByteString (ByteString)
+import Data.ByteString (ByteString, toStrict)
 import qualified Data.ByteString as BS
 import qualified Data.Map as M
 import Data.Maybe (mapMaybe)
@@ -93,6 +94,7 @@ import Control.Exception (throwIO)
 import Control.Concurrent (Chan, writeChan, readChan, newChan)
 
 import qualified Spuriobot.DB as DB
+import GHC.Generics (Generic)
 
 main :: IO ()
 main = do
@@ -144,7 +146,7 @@ showt = T.pack . show
 
 newtype ProjectId = ProjectId {unProjectId :: Int}
     deriving stock (Show, Ord, Eq)
-    deriving newtype (FromJSON)
+    deriving newtype (FromJSON, ToJSON)
 
 -- TODO convert to newtype when the fancy strikes
 type JobId = Int64
@@ -193,6 +195,10 @@ instance FromJSON BuildStatus where
         f "failed" = Failed
         f x = OtherBuildStatus x
 
+instance ToJSON BuildStatus where
+    toJSON Failed = "failed"
+    toJSON (OtherBuildStatus x) = toJSON x
+
 -- | BuildEvent is what the webhook receives
 data GitLabBuildEvent = GitLabBuildEvent
     { glbBuildId :: Int64
@@ -200,7 +206,9 @@ data GitLabBuildEvent = GitLabBuildEvent
     , glbProjectId :: ProjectId
     , glbFinishedAt :: Maybe UTCTime
     }
-    deriving (Show, Eq)
+    deriving stock (Show, Eq, Generic)
+
+instance ToJSON GitLabBuildEvent
 
 instance FromJSON GitLabBuildEvent where
     parseJSON = withObject "GitLabBuildEvent" $ \v ->
@@ -518,7 +526,8 @@ logFailures failures
 -- | Top-level handler for the GitLab job event
 -- https://docs.gitlab.com/ee/user/project/integrations/webhook_events.html#job-events
 processBuildEvent :: GitLabBuildEvent -> Spuriobot ()
-processBuildEvent ev =
+processBuildEvent ev = do
+    trace (decodeUtf8 . toStrict . encode $ ev)
     case glbFinishedAt ev of
         Nothing -> trace "skipping unfinished job"
         -- FIXME explain use of clearRetry here.
