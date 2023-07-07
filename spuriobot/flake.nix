@@ -26,14 +26,7 @@
         let
           cfg = config.services.spuriobot;
           botOptions = { lib, ... }: {
-            enable = lib.mkOption {
-              type = lib.types.bool;
-              default = false;
-              description = ''
-                Enable spuriobot, the GitLab webhook service that retries
-                spurious failures.
-              '';
-            };
+            enable = lib.mkEnableOption "spuriobot";
 
             envFile = lib.mkOption {
               type = lib.types.str;
