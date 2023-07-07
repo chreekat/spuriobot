@@ -362,7 +362,7 @@ withTrace t_  = Spuriobot . withReaderT (modifyTraceContext (addContext t_)) . u
 -- | Spuriobot action that prints a trace message in the current trace context.
 -- Uses BS.putStr to prevent interleaving.
 trace :: Text -> Spuriobot ()
-trace t = withTrace t (liftIO . BS.putStr . encodeUtf8  =<< asks traceContext)
+trace t = withTrace t (liftIO . BS.putStr . encodeUtf8 . (<> "\n") =<< asks traceContext)
 
 -- | Spuriobot action that runs a database action.
 runDB :: (Connection -> IO a) -> Spuriobot a
