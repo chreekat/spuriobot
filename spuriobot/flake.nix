@@ -23,9 +23,9 @@
         };
       };
       nixosModules.default = { config, lib, pkgs, ... }:
-        let cfg = config.services.spuriobot;
-        in {
-          options.services.spuriobot = {
+        let
+          cfg = config.services.spuriobot;
+          botOptions = { lib, ... }: {
             enable = lib.mkOption {
               type = lib.types.bool;
               default = false;
@@ -39,9 +39,19 @@
               type = lib.types.str;
               description = ''
                 Path, as a string, to an EnvironmentFile (see systemd.exec).
-                Used for passing secrets.
+
+                Although it's a bad idea, this is used for passing secrets.
+                (FIXME: Use LoadCredential instead.)
               '';
             };
+        in {
+          options.services.spuriobot = lib.mkOption {
+            type = lib.types.attrsOf (lib.types.submodule botOptions);
+            default = {};
+            description = ''
+              Configuration for spuriobot, the GitLab spurious failure webhook
+              service
+            '';
           };
           config = {
             systemd.services.spuriobot = lib.mkIf cfg.enable {
