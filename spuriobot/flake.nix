@@ -26,32 +26,34 @@
         let
           cfg = config.services.spuriobot;
           botOptions = { lib, ... }: {
-            enable = lib.mkEnableOption "spuriobot";
+            options = {
+              enable = lib.mkEnableOption "spuriobot";
 
-            envFile = lib.mkOption {
-              type = lib.types.str;
-              description = ''
-                Path, as a string, to an EnvironmentFile (see systemd.exec).
+              envFile = lib.mkOption {
+                type = lib.types.str;
+                description = ''
+                  Path, as a string, to an EnvironmentFile (see systemd.exec).
 
-                Although it's a bad idea, this is used for passing secrets.
-                (FIXME: Use LoadCredential instead.)
-              '';
-            };
+                  Although it's a bad idea, this is used for passing secrets.
+                  (FIXME: Use LoadCredential instead.)
+                '';
+              };
 
-            database = lib.mkOption {
-              type = lib.types.str;
-              description = ''
-                Name of the Postgresql database to connect to.
+              database = lib.mkOption {
+                type = lib.types.str;
+                description = ''
+                  Name of the Postgresql database to connect to.
 
-                You can also skip this and just set PGDATABASE in the
-                environment via the `envFile` option.
+                  You can also skip this and just set PGDATABASE in the
+                  environment via the `envFile` option.
 
-                **The database must already exist. The table 'ci_failure' must
-                already exist within it. And the user 'spuriobot' must
-                have write access to that table.**
+                  **The database must already exist. The table 'ci_failure' must
+                  already exist within it. And the user 'spuriobot' must
+                  have write access to that table.**
 
-                (FIXME: The above)
-              '';
+                  (FIXME: The above)
+                '';
+              };
             };
           };
         in {
