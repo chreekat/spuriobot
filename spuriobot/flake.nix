@@ -58,7 +58,7 @@
           };
         in {
           options.services.spuriobot = lib.mkOption {
-            type = lib.types.attrsOf (lib.types.submodule botOptions);
+            type = lib.types.submodule botOptions;
             default = {};
             description = ''
               Configuration for spuriobot, the GitLab spurious failure webhook
