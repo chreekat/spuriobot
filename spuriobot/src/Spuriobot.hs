@@ -162,6 +162,7 @@ data JobInfo = JobInfo
     { webUrl :: JobWebURL
     , runnerId :: Int64
     , jobDate :: UTCTime
+    , jobFailureReason :: Maybe JobFailureReason
     }
     deriving (Show, Eq)
 
@@ -171,6 +172,17 @@ instance FromJSON JobInfo where
             <$> o .: "web_url"
             <*> (o .: "runner" >>= (.: "id"))
             <*> o .: "created_at"
+            <*> o .:? "failure_reason"
+
+-- | Failure reasons that we care about.
+data JobFailureReason = JobTimeout | JobStuck | OtherReason Text
+    deriving (Eq, Show)
+
+instance FromJSON JobFailureReason where
+    parseJSON = withText "JobFailureReason" (pure . f) where
+        f "job_execution_timeout" = JobTimeout
+        f "stuck_or_timeout_failure" = JobStuck
+        f x = OtherReason x
 
 -- | The known build statuses that we care about.
 data BuildStatus = Failed | OtherBuildStatus Text
@@ -186,7 +198,6 @@ data GitLabBuildEvent = GitLabBuildEvent
     { glbBuildId :: Int64
     , glbBuildStatus :: BuildStatus
     , glbProjectId :: ProjectId
-    , glbJobFailureReason :: Maybe JobFailureReason
     }
     deriving (Show, Eq)
 
@@ -196,16 +207,6 @@ instance FromJSON GitLabBuildEvent where
             <$> v .: "build_id"
             <*> v .: "build_status"
             <*> v .: "project_id"
-            <*> v .:? "failure_reason"
-
-data JobFailureReason = JobTimeout | JobStuck | OtherReason Text
-    deriving (Eq, Show)
-
-instance FromJSON JobFailureReason where
-    parseJSON = withText "JobFailureReason" (pure . f) where
-        f "job_execution_timeout" = JobTimeout
-        f "stuck_or_timeout_failure" = JobStuck
-        f x = OtherReason x
 
 -- | Get /jobs/<job-id>
 fetchJobInfo :: ProjectId -> JobId -> Spuriobot JobInfo
@@ -531,11 +532,11 @@ processBuildEvent GitLabBuildEvent{..} =
 data Jobbo = Jobbo (Maybe JobFailureReason) Text
 
 -- | Given a failed job, deal with spurios (if any)
-processFailure :: ProjectId -> JobId -> Maybe JobFailureReason -> Spuriobot ()
-processFailure glbProjectId glbBuildId glbJobFailureReason = do
+processFailure :: GitLabBuildEvent -> Spuriobot ()
+processFailure GitLabBuildEvent { glbProjectId, glbBuildId } = do
     jobInfo <- fetchJobInfo glbProjectId glbBuildId
     logs <- fetchJobLogs (webUrl jobInfo)
-    let jobbo = Jobbo glbJobFailureReason logs
+    let jobbo = Jobbo (jobFailureReason jobInfo) logs
     let failures = collectFailures jobbo
     logFailures failures
     void $ runDB $ DB.insertFailures (mkDBFailures glbBuildId jobInfo (S.toList failures))
