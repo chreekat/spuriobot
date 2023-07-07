@@ -69,6 +69,9 @@
             systemd.services.spuriobot = lib.mkIf cfg.enable {
               description = "GitLab spurious failure webhook service";
               wantedBy = [ "multi-user.target" ];
+              environment = {
+                PGDATABASE = cfg.database;
+              };
               serviceConfig = {
                 # Use myPkgs here because we need a spanking new version of
                 # 'req', which isn't on the one-and-only target machine this flake
@@ -86,9 +89,6 @@
                 # If we stop supporting NixOS < 23.05, we can get rid of all
                 # this.
                 ExecStart = pkgs.lib.getExe myPkgs.myHaskellPackages.spuriobot;
-                environment = {
-                  PGDATABASE = cfg.database;
-                };
                 EnvironmentFile = cfg.envFile;
                 User = "spuriobot";
                 DynamicUser = "yes";
