@@ -73,6 +73,7 @@ import Network.HTTP.Req (
     (/:), (/~),
  )
 import qualified Network.HTTP.Req as R
+import Network.Wai.Middleware.RequestLogger
 import Servant (
     JSON,
     Post,
@@ -119,7 +120,7 @@ main = do
 
     race_
         (runSpuriobot strApiToken pool chan retryService)
-        (run 8080 $ serve webhookAPI (mainServer strApiToken pool chan))
+        (run 8080 $ logStdout $ serve webhookAPI (mainServer strApiToken pool chan))
 
 spurioServer :: ServerT WebHookAPI Spuriobot
 spurioServer = jobEvent
