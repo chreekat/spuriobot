@@ -68,7 +68,7 @@
           config = {
             systemd.services.spuriobot = lib.mkIf cfg.enable {
               description = "GitLab spurious failure webhook service";
-              wantedBy = [ "multi-user.target" ];
+              wantedBy = [ "network.target" ];
               environment = {
                 PGDATABASE = cfg.database;
               };
@@ -92,6 +92,15 @@
                 EnvironmentFile = cfg.envFile;
                 User = "spuriobot";
                 DynamicUser = "yes";
+
+                Restart = "on-failure";
+
+                # With these settings, I want to make sure the bot dies only if
+                # it's *really* misbehaving. But in general, I don't have good
+                # intuition for what these values should be.
+                RestartSec = "1s";
+                StartLimitInterval = "30s";
+                StartLimitBurst = "20";
               };
             };
           };
