@@ -19,7 +19,7 @@
 
         myShell = final.myHaskellPackages.shellFor {
           packages = pkgs: [ pkgs.spuriobot ];
-          buildInputs = [ myPkgs.haskell-language-server myPkgs.cachix final.nil final.postgresql ];
+          buildInputs = [ myPkgs.haskell-language-server myPkgs.cachix final.nil final.postgresql final.stylish-haskell ];
         };
       };
       nixosModules.default = { config, lib, pkgs, ... }:
