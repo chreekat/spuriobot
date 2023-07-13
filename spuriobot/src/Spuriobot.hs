@@ -39,7 +39,7 @@ import System.Environment (
  )
 import Control.Concurrent.Async (race_)
 import Control.Concurrent.Classy (fork, MonadConc)
-import Control.Monad.Catch (MonadThrow, MonadMask, MonadCatch, finally, Exception)
+import Control.Monad.Catch (MonadThrow, MonadMask, MonadCatch, finally, Exception, try)
 import Control.Monad.Trans (MonadIO, liftIO)
 import Control.Monad.Reader (ReaderT(..), MonadReader, withReaderT, asks)
 import Data.Aeson (
@@ -73,7 +73,7 @@ import Network.HTTP.Req (
     responseBody,
     runReq,
     useHttpsURI,
-    (/:), (/~),
+    (/:), (/~), HttpException,
  )
 import qualified Network.HTTP.Req as R
 import Network.Wai.Middleware.RequestLogger (logStdout)
@@ -94,12 +94,14 @@ import Data.Pool (Pool, withResource, createPool)
 import Data.Time (UTCTime)
 import Data.Int (Int64)
 import Control.Monad
-import Control.Exception (throwIO)
+import Control.Exception (throwIO, displayException)
 import Control.Concurrent (Chan, writeChan, readChan, newChan)
 import Data.Time.LocalTime (localTimeToUTC, utc)
 
 import qualified Spuriobot.DB as DB
 import GHC.Generics (Generic)
+import Data.Void (Void)
+import Control.Retry (retrying, limitRetries, fullJitterBackoff)
 
 main :: IO ()
 main = do
@@ -281,7 +283,10 @@ type RetryChan = Chan RetryAction
 type RetryMap = M.Map JobId Word
 
 data RetryAction = RetryAction JobId RetryCmd
-data RetryCmd = Retry ProjectId | Clear
+data RetryCmd
+    = Retry ProjectId
+    -- ^ One needs to know the project id for a job to send a retry to GitLab
+    | Clear
 
 clearRetry :: JobId -> Spuriobot ()
 clearRetry jobId = do
@@ -293,55 +298,83 @@ retryJob projId jobId = do
     chan <- asks retryChan
     liftIO $ writeChan chan (RetryAction jobId (Retry projId))
 
--- | This is an action that continually pulls from the chan and handles the
--- actions.
-retryService :: Spuriobot a
+-- | This is an action that continually pulls from the chan and handles
+-- 'RetryCmd' commands.
+--
+-- This "service" will keep running even if GitLab requests experience HTTP
+-- failures. Other kinds of exceptions, however, will crash the thread, which
+-- will bubble up and crashes the whole app. systemd will need to take over in
+-- that case.
+retryService :: Spuriobot Void
 retryService = loop M.empty where
+    -- Number of times we will retry a job.
     maxRetries = 10
 
-    loop :: RetryMap -> Spuriobot a
+    loop :: RetryMap -> Spuriobot Void
     loop retryMap = do
         RetryAction jobId cmd <- liftIO . readChan =<< asks retryChan
         -- A job that hasn't been retried isn't in the map, so we return 0
         let retryCount = M.findWithDefault 0 jobId retryMap
-        -- We're done with this entry now
+        -- We're done with this entry now, so delete it. Note this makes 'Clear'
+        -- a no-op in handle_cmd.
         let retryMap' = M.delete jobId retryMap
-        loop =<< handleCmd jobId retryMap' retryCount cmd
+        loop =<< handle_cmd jobId retryMap' retryCount cmd
 
-    handleCmd jobId retryMap retryCount cmd = do
+    handle_cmd jobId retryMap retryCount cmd = do
         case cmd of
             Clear -> pure retryMap
             Retry projId ->
                 if retryCount < maxRetries
                 then do
-                    newId <- retry_job projId jobId
-                    trace $ "retried as job: " <> showt newId
-                    pure (M.insert newId (retryCount + 1) retryMap)
+                    newId' <- retry_job projId jobId
+                    case newId' of
+                        Just newId -> do
+                            trace $ "retried as job: " <> showt newId
+                            pure (M.insert newId (retryCount + 1) retryMap)
+                        Nothing -> pure retryMap
                 else do
                     trace "exceeded max retries"
                     pure retryMap
 
-    retry_job :: ProjectId -> JobId -> Spuriobot JobId
-    retry_job (ProjectId projectId) jobId = do
+    retry_job :: ProjectId -> JobId -> Spuriobot (Maybe JobId)
+    retry_job (ProjectId projectId) jobId =
+        let test_exception (Left e) =
+                let msg = unlines . map ("WARN: " <>) . lines . displayException
+                in True <$ do
+                    trace "WARN: Retry failed."
+                    trace (T.pack (msg e))
+            test_exception (Right _) = pure False
 
-        let retryUrl =
-                https "gitlab.haskell.org"
-                    /: "api"
-                    /: "v4"
-                    /: "projects"
-                    /~ projectId
-                    /: "jobs"
-                    /~ jobId
-                    /: "retry"
 
-        tok <- asks apiToken
-        fmap (retryJobId . responseBody) $ runReq defaultHttpConfig $
-            req
-                R.POST
-                retryUrl
-                NoReqBody
-                jsonResponse
-                (headerRedacted "PRIVATE-TOKEN" tok)
+            -- The type signature is crucial as it constrains `try`.
+            retry_action :: Spuriobot (Either HttpException JobId)
+            retry_action = try $ do
+                tok <- asks apiToken
+                fmap (retryJobId . responseBody) $ runReq defaultHttpConfig $
+                    req
+                        R.POST
+                        retryUrl
+                        NoReqBody
+                        jsonResponse
+                        (headerRedacted "PRIVATE-TOKEN" tok)
+
+                where retryUrl =
+                        https "gitlab.haskell.org"
+                            /: "api"
+                            /: "v4"
+                            /: "projects"
+                            /~ projectId
+                            /: "jobs"
+                            /~ jobId
+                            /: "retry"
+
+            policy = limitRetries 5 <> fullJitterBackoff halfSecond
+                where halfSecond = 500 * 1000
+        in do
+            res <- retrying policy (const test_exception) (const retry_action)
+            case res of
+                Left _ -> Nothing <$ trace ("ERR: Giving up retrying job " <> showt jobId)
+                Right j -> pure $ Just j
 
 newtype RetryResult = RetryResult { retryJobId :: Int64 }
     deriving newtype (FromJSON)

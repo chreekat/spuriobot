@@ -44,6 +44,7 @@ library
     , mtl
     , postgresql-simple
     , regex-tdfa
+    , retry
     , req ^>= 3.13.0
     , servant
     , servant-client
