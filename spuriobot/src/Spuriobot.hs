@@ -193,7 +193,8 @@ type Token = ByteString
 -- failures, and the /job endpoint for everything else.
 data JobInfo = JobInfo
     { webUrl :: JobWebURL
-    , runnerId :: Int64
+    , runnerId :: Maybe Int64
+    -- ^ GitLab can "lose" this information
     , jobDate :: UTCTime
     , jobFailureReason :: Maybe JobFailureReason
     }
@@ -203,7 +204,7 @@ instance FromJSON JobInfo where
     parseJSON = withObject "JobInfo" $ \o ->
         JobInfo
             <$> o .: "web_url"
-            <*> (o .: "runner" >>= (.: "id"))
+            <*> (o .:? "runner" >>= maybe (pure Nothing) (.: "id"))
             <*> o .: "created_at"
             <*> o .:? "failure_reason"
 

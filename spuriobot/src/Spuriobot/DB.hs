@@ -15,7 +15,7 @@ import Database.PostgreSQL.Simple hiding (connect)
 
 type FailType = Text
 
-data Failure = Failure Int64 FailType UTCTime Text Int64
+data Failure = Failure Int64 FailType UTCTime Text (Maybe Int64)
     deriving (Eq, Show, Generic, ToRow)
 
 type DB a = Connection -> IO a
