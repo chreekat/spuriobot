@@ -592,7 +592,6 @@ logFailures failures
 -- https://docs.gitlab.com/ee/user/project/integrations/webhook_events.html#job-events
 processBuildEvent :: GitLabBuildEvent -> Spuriobot ()
 processBuildEvent ev = do
-    trace (decodeUtf8 . toStrict . encode $ ev)
     case glbFinishedAt ev of
         Nothing -> trace "skipping unfinished job"
         -- FIXME explain use of clearRetry here.
@@ -601,7 +600,7 @@ processBuildEvent ev = do
 processFinishedJob :: GitLabBuildEvent -> Spuriobot ()
 processFinishedJob ev = do
     case glbBuildStatus ev of
-        OtherBuildStatus x -> trace (x <> " is not a failure")
+        OtherBuildStatus x -> trace x
         Failed -> withTrace "failed" $ processFailure ev
 
 -- | Characteristics of a job that we test against.
