@@ -22,6 +22,9 @@ main = hspec $ do
         it "can read a GitLabBuildEvent" $ do
             eiDecoded <- eitherDecodeFileStrict' "testdata/no-spurio.json" :: IO (Either String GitLabBuildEvent)
             eiDecoded `shouldSatisfy` isRight
+        it "can read a job retry response" $ do
+            eiDecoded <- eitherDecodeFileStrict' "testdata/retry-response.json" :: IO (Either String RetryResult)
+            eiDecoded `shouldSatisfy` isRight
     describe "Log grepping" $ do
         it "can find a sample error" $ do
             logText <- T.readFile "testdata/kill9failure.log"

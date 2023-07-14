@@ -29,6 +29,7 @@ module Spuriobot (
     webhookAPI,
     Check(..),
     Jobbo(..),
+    RetryResult(..),
 ) where
 
 import Network.Wai.Handler.Warp (run)
@@ -48,12 +49,12 @@ import Data.Aeson (
     withObject,
     withText,
     (.:),
-    (.:?), ToJSON, toJSON, encode
+    (.:?), ToJSON, toJSON,
  )
 import qualified Data.Aeson.Types as Aeson
 import qualified Data.Attoparsec.Text as AttoText
 import qualified Data.Attoparsec.Time as Atto
-import Data.ByteString (ByteString, toStrict)
+import Data.ByteString (ByteString, )
 import qualified Data.ByteString as BS
 import qualified Data.Map as M
 import Data.Maybe (mapMaybe)
@@ -377,13 +378,11 @@ retryService = loop M.empty where
                 Right j -> pure $ Just j
 
 newtype RetryResult = RetryResult { retryJobId :: Int64 }
-    deriving newtype (FromJSON)
+    deriving (Eq, Show)
 
-
-
-
-
-
+instance FromJSON RetryResult where
+    parseJSON = withObject "RetryResult" $ \o ->
+        RetryResult <$> o .: "id"
 --
 -- Servant boilerplate
 --
