@@ -20,7 +20,11 @@ extra-source-files:
 library
   exposed-modules:
       Spuriobot
+      Spuriobot.Foundation
       Spuriobot.DB
+      Spuriobot.RetryJob
+      Spuriobot.Spurio
+      GitLabApi
   other-modules:
       Paths_spuriobot
   hs-source-dirs:

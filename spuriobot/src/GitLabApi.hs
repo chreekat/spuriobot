@@ -1,0 +1,174 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+-- Used for MonadConc:
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DeriveGeneric #-}
+
+module GitLabApi (
+    GitLabBuildEvent (..),
+    GitLabToken(..),
+    ProjectId (..),
+    JobId,
+    JobWebURL,
+    fetchJobInfo,
+    JobInfo(..),
+    JobFailureReason(..),
+    BuildStatus(..),
+) where
+
+import Data.Aeson (
+    FromJSON,
+    parseJSON,
+    withObject,
+    withText,
+    (.:),
+    (.:?), ToJSON, toJSON,
+ )
+import qualified Data.Aeson.Types as Aeson
+import qualified Data.Attoparsec.Text as AttoText
+import qualified Data.Attoparsec.Time as Atto
+import Data.Text (Text)
+import Network.HTTP.Req (
+    NoReqBody (..),
+    defaultHttpConfig,
+    headerRedacted,
+    https,
+    jsonResponse,
+    req,
+    responseBody,
+    runReq,
+    (/:), (/~),
+ )
+import qualified Network.HTTP.Req as R
+import Data.Time (UTCTime)
+import Data.Int (Int64)
+import Data.Time.LocalTime (localTimeToUTC, utc)
+
+import GHC.Generics (Generic)
+import Data.ByteString (ByteString)
+
+--
+-- GitLab API types and handlers
+--
+
+newtype GitLabToken = GitLabToken ByteString
+
+-- | GitLab has a non-standard time format in the build events.
+-- "2022-12-22 09:30:51 UTC"
+newtype GitLabTime = GitLabTime UTCTime
+    deriving (Eq, Show)
+    deriving newtype ToJSON
+
+instance FromJSON GitLabTime where
+    parseJSON = withText "GitLabTime" (runAtto attoParseGitLabTime)
+        where
+        -- | Run an attoparsec parser as an aeson parser.
+        -- Copied from aeson's (internal) Data.Aeson.Parser.Time.
+        runAtto :: AttoText.Parser a -> Text -> Aeson.Parser a
+        runAtto p t = case AttoText.parseOnly (p <* AttoText.endOfInput) t of
+                    Left err -> fail $ "could not parse date: " ++ err
+                    Right r  -> return r
+
+
+-- | Parses "2022-12-22 09:30:51 UTC" as UTCTime
+attoParseGitLabTime :: AttoText.Parser GitLabTime
+attoParseGitLabTime = fmap GitLabTime $ do
+    localtime <- Atto.localTime
+    _ <- AttoText.string " UTC"
+    pure $ localTimeToUTC utc localtime
+
+newtype ProjectId = ProjectId {unProjectId :: Int}
+    deriving stock (Show, Ord, Eq)
+    deriving newtype (FromJSON, ToJSON)
+
+-- TODO convert to newtype when the fancy strikes
+type JobId = Int64
+type JobWebURL = Text
+
+-- | The data we get from the /job API endpoint.
+--
+-- Most of what we need could come from the BuildEvent, but the web_url in
+-- particular is missing, so it's not sufficient for our use.
+--
+-- Informally, we use BuildEvent to decide whether or not to check the job for
+-- failures, and the /job endpoint for everything else.
+data JobInfo = JobInfo
+    { webUrl :: JobWebURL
+    , runnerId :: Maybe Int64
+    -- ^ GitLab can "lose" this information
+    , jobDate :: UTCTime
+    , jobFailureReason :: Maybe JobFailureReason
+    }
+    deriving (Show, Eq)
+
+instance FromJSON JobInfo where
+    parseJSON = withObject "JobInfo" $ \o ->
+        JobInfo
+            <$> o .: "web_url"
+            <*> (o .:? "runner" >>= maybe (pure Nothing) (.: "id"))
+            <*> o .: "created_at"
+            <*> o .:? "failure_reason"
+
+-- | Failure reasons that we care about.
+data JobFailureReason = JobTimeout | JobStuck | OtherReason Text
+    deriving (Eq, Show)
+
+instance FromJSON JobFailureReason where
+    parseJSON = withText "JobFailureReason" (pure . f) where
+        f "job_execution_timeout" = JobTimeout
+        f "stuck_or_timeout_failure" = JobStuck
+        f x = OtherReason x
+
+-- | The known build statuses that we care about.
+data BuildStatus = Failed | OtherBuildStatus Text
+    deriving (Eq, Show)
+
+instance FromJSON BuildStatus where
+    parseJSON = withText "BuildStatus" (pure . f) where
+        f "failed" = Failed
+        f x = OtherBuildStatus x
+
+instance ToJSON BuildStatus where
+    toJSON Failed = "failed"
+    toJSON (OtherBuildStatus x) = toJSON x
+
+-- | BuildEvent is what the webhook receives
+data GitLabBuildEvent = GitLabBuildEvent
+    { glbBuildId :: Int64
+    , glbBuildStatus :: BuildStatus
+    , glbProjectId :: ProjectId
+    , glbFinishedAt :: Maybe GitLabTime
+    }
+    deriving stock (Show, Eq, Generic)
+
+instance ToJSON GitLabBuildEvent
+
+instance FromJSON GitLabBuildEvent where
+    parseJSON = withObject "GitLabBuildEvent" $ \v ->
+        GitLabBuildEvent
+            <$> v .: "build_id"
+            <*> v .: "build_status"
+            <*> v .: "project_id"
+            <*> v .: "build_finished_at"
+
+-- | Get /jobs/<job-id>
+fetchJobInfo :: GitLabToken -> ProjectId -> JobId -> IO JobInfo
+fetchJobInfo (GitLabToken tok) (ProjectId projectId) jobId = do
+    fmap responseBody $ runReq defaultHttpConfig $
+        req
+            R.GET
+            ( https
+                "gitlab.haskell.org"
+                /: "api"
+                /: "v4"
+                /: "projects"
+                /~ projectId
+                /: "jobs"
+                /~ jobId
+            )
+            NoReqBody
+            jsonResponse
+            (headerRedacted "PRIVATE-TOKEN" tok)
