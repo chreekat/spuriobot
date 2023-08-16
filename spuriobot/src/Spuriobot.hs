@@ -283,7 +283,7 @@ fetchJobInfo (ProjectId projectId) jobId = do
 type RetryChan = Chan RetryAction
 type RetryMap = M.Map JobId Word
 
-data RetryAction = RetryAction JobId RetryCmd
+data RetryAction = RetryAction JobId TraceContext RetryCmd
 data RetryCmd
     = Retry ProjectId
     -- ^ One needs to know the project id for a job to send a retry to GitLab
@@ -292,12 +292,14 @@ data RetryCmd
 clearRetry :: JobId -> Spuriobot ()
 clearRetry jobId = do
     chan <- asks retryChan
-    liftIO $ writeChan chan (RetryAction jobId Clear)
+    ctx <- asks traceContext
+    liftIO $ writeChan chan (RetryAction jobId ctx Clear)
 
 retryJob :: ProjectId -> JobId -> Spuriobot ()
 retryJob projId jobId = do
     chan <- asks retryChan
-    liftIO $ writeChan chan (RetryAction jobId (Retry projId))
+    ctx <- asks traceContext
+    liftIO $ writeChan chan (RetryAction jobId ctx (Retry projId))
 
 -- | This is an action that continually pulls from the chan and handles
 -- 'RetryCmd' commands.
@@ -313,13 +315,13 @@ retryService = loop M.empty where
 
     loop :: RetryMap -> Spuriobot Void
     loop retryMap = do
-        RetryAction jobId cmd <- liftIO . readChan =<< asks retryChan
+        RetryAction jobId ctx cmd <- liftIO . readChan =<< asks retryChan
         -- A job that hasn't been retried isn't in the map, so we return 0
         let retryCount = M.findWithDefault 0 jobId retryMap
         -- We're done with this entry now, so delete it. Note this makes 'Clear'
         -- a no-op in handle_cmd.
         let retryMap' = M.delete jobId retryMap
-        loop =<< handle_cmd jobId retryMap' retryCount cmd
+        loop =<< withTrace ctx (handle_cmd jobId retryMap' retryCount cmd)
 
     handle_cmd jobId retryMap retryCount cmd = do
         case cmd of
@@ -339,14 +341,16 @@ retryService = loop M.empty where
 
     retry_job :: ProjectId -> JobId -> Spuriobot (Maybe JobId)
     retry_job (ProjectId projectId) jobId =
-        let test_exception (Left e) =
-                let msg = unlines . map ("WARN: " <>) . lines . displayException
-                in True <$ do
-                    trace "WARN: Retry failed."
-                    trace (T.pack (msg e))
+        let -- Test if we should retry the retry action.
+            test_exception (Left e) = do
+                withTrace "WARN" $ do
+                    trace "Retry failed."
+                    mapM_ trace (T.lines . T.pack . displayException $ e)
+                pure True
             test_exception (Right _) = pure False
 
 
+            -- This sends the retry command to GitLab.
             -- The type signature is crucial as it constrains `try`.
             retry_action :: Spuriobot (Either HttpException JobId)
             retry_action = try $ do
@@ -414,10 +418,12 @@ jobEvent glBuildEvent =
 
 data SpuriobotContext = SpuriobotContext
     { apiToken :: ByteString
-    , traceContext :: Text
+    , traceContext :: TraceContext
     , dbPool :: Pool Connection
     , retryChan :: RetryChan
     }
+
+type TraceContext = Text
 
 newtype Spuriobot a = Spuriobot { unSpuriobot :: ReaderT SpuriobotContext IO a }
     deriving newtype (Functor, Applicative, Monad, MonadReader SpuriobotContext, MonadIO, MonadThrow, MonadCatch, MonadMask, MonadConc)
