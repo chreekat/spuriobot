@@ -9,7 +9,9 @@ view () {
     curl -L "https://gitlab.haskell.org/ghc/ghc/-/jobs/${1}/raw" | ( LESS=-iRXK less )
 }
 
-if [[ -n "$@" ]]; then
+if [[ $1 -eq "-c" ]]; then
+    view "$(xclip -selection clipboard -o)"
+elif [[ -n "$@" ]]; then
     for t in "$@"; do
         view $t
     done
