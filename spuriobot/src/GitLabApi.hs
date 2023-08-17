@@ -17,6 +17,8 @@ module GitLabApi (
     JobInfo(..),
     JobFailureReason(..),
     BuildStatus(..),
+    retryJobApi,
+    RetryResult(..),
 ) where
 
 import Data.Aeson (
@@ -88,6 +90,13 @@ newtype ProjectId = ProjectId {unProjectId :: Int}
 type JobId = Int64
 type JobWebURL = Text
 
+----------------------
+-- * /job API endpoint
+----------------------
+
+
+
+
 -- | The data we get from the /job API endpoint.
 --
 -- Most of what we need could come from the BuildEvent, but the web_url in
@@ -135,6 +144,13 @@ instance ToJSON BuildStatus where
     toJSON Failed = "failed"
     toJSON (OtherBuildStatus x) = toJSON x
 
+
+-----------------------------
+-- * Job webhook request body
+-----------------------------
+
+
+
 -- | BuildEvent is what the webhook receives
 data GitLabBuildEvent = GitLabBuildEvent
     { glbBuildId :: Int64
@@ -172,3 +188,39 @@ fetchJobInfo (GitLabToken tok) (ProjectId projectId) jobId = do
             NoReqBody
             jsonResponse
             (headerRedacted "PRIVATE-TOKEN" tok)
+
+
+------------------------
+-- * /job/<job-id>/retry
+------------------------
+
+
+
+
+newtype RetryResult = RetryResult { retryJobId :: Int64 }
+    deriving (Eq, Show)
+
+instance FromJSON RetryResult where
+    parseJSON = withObject "RetryResult" $ \o ->
+        RetryResult <$> o .: "id"
+
+-- | This name is dumb, but even worse would be to have the clashing names
+-- Spuriobot.RetryJob.retryJob and GitLabApi.retryJob. Sorry.
+retryJobApi :: GitLabToken -> ProjectId -> JobId -> IO JobId
+retryJobApi (GitLabToken tok) (ProjectId projectId) jobId =
+    fmap (retryJobId . responseBody) $ runReq defaultHttpConfig $
+        req
+            R.POST
+            retryUrl
+            NoReqBody
+            jsonResponse
+            (headerRedacted "PRIVATE-TOKEN" tok)
+    where retryUrl =
+            https "gitlab.haskell.org"
+                /: "api"
+                /: "v4"
+                /: "projects"
+                /~ projectId
+                /: "jobs"
+                /~ jobId
+                /: "retry"

@@ -14,7 +14,8 @@ import Test.Hspec (
     shouldSatisfy,
  )
 
-import Spuriobot
+import GitLabApi
+import Spuriobot.Spurio
 
 main :: IO ()
 main = hspec $ do

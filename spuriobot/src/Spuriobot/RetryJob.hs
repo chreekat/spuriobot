@@ -9,7 +9,6 @@
 {-# HLINT ignore "Use newtype instead of data" #-}
 
 module Spuriobot.RetryJob (
-    RetryResult(..),
     RetryAction(..),
     RetryCmd(..),
     RetryChan(..),
@@ -21,27 +20,11 @@ module Spuriobot.RetryJob (
 import Control.Monad.Catch (try)
 import Control.Monad.Trans (liftIO)
 import Control.Monad.Reader (asks)
-import Data.Aeson (
-    FromJSON,
-    parseJSON,
-    withObject,
-    (.:),
- )
 import qualified Data.Map as M
 import qualified Data.Text as T
 import Network.HTTP.Req (
-    NoReqBody (..),
-    defaultHttpConfig,
-    headerRedacted,
-    https,
-    jsonResponse,
-    req,
-    responseBody,
-    runReq,
-    (/:), (/~), HttpException,
+    HttpException,
  )
-import qualified Network.HTTP.Req as R
-import Data.Int (Int64)
 import Data.Text (Text)
 import Control.Exception (displayException)
 import Control.Concurrent (Chan, writeChan, readChan)
@@ -120,7 +103,7 @@ retryService = loop M.empty where
                     pure retryMap
 
     retry_job :: ProjectId -> JobId -> Spuriobot (Maybe JobId)
-    retry_job (ProjectId projectId) jobId =
+    retry_job projectId jobId =
         let -- Test if we should retry the retry action.
             test_exception (Left e) = do
                 withTrace "WARN" $ do
@@ -135,23 +118,7 @@ retryService = loop M.empty where
             retry_action :: Spuriobot (Either HttpException JobId)
             retry_action = try $ do
                 tok <- asks apiToken
-                fmap (retryJobId . responseBody) $ runReq defaultHttpConfig $
-                    req
-                        R.POST
-                        retryUrl
-                        NoReqBody
-                        jsonResponse
-                        (headerRedacted "PRIVATE-TOKEN" tok)
-
-                where retryUrl =
-                        https "gitlab.haskell.org"
-                            /: "api"
-                            /: "v4"
-                            /: "projects"
-                            /~ projectId
-                            /: "jobs"
-                            /~ jobId
-                            /: "retry"
+                liftIO $ retryJobApi (GitLabToken tok) projectId jobId
 
             policy = limitRetries 5 <> fullJitterBackoff halfSecond
                 where halfSecond = 500 * 1000
@@ -160,10 +127,3 @@ retryService = loop M.empty where
             case res of
                 Left _ -> Nothing <$ trace ("ERR: Giving up retrying job " <> showt jobId)
                 Right j -> pure $ Just j
-
-newtype RetryResult = RetryResult { retryJobId :: Int64 }
-    deriving (Eq, Show)
-
-instance FromJSON RetryResult where
-    parseJSON = withObject "RetryResult" $ \o ->
-        RetryResult <$> o .: "id"

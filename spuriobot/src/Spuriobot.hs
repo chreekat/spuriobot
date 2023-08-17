@@ -14,13 +14,7 @@ Overall flow of the application:
 - TODO: tell the job to retry
 -}
 module Spuriobot (
-    GitLabBuildEvent (..),
-    collectFailures,
     main,
-    webhookAPI,
-    Check(..),
-    Jobbo(..),
-    RetryResult(..),
 ) where
 
 import Network.Wai.Handler.Warp (run)
