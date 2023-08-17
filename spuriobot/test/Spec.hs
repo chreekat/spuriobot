@@ -26,6 +26,17 @@ main = hspec $ do
         it "can read a job retry response" $ do
             eiDecoded <- eitherDecodeFileStrict' "testdata/retry-response.json" :: IO (Either String RetryResult)
             eiDecoded `shouldSatisfy` isRight
+        describe "System events" $ do
+            it "can read a project creation event" $ do
+                projCreated <- eitherDecodeFileStrict' "testdata/project-creation-event.json" :: IO (Either String GitLabSystemEvent)
+                projCreated `shouldBe` Right (ProjectSystemEvent ProjectCreate (ProjectId 74))
+            it "can read a project destroy event" $ do
+                projDestroyed <- eitherDecodeFileStrict' "testdata/project-destroyed-event.json" :: IO (Either String GitLabSystemEvent)
+                projDestroyed `shouldSatisfy` isRight
+            it "can read a user removed event" $ do
+                userRemoved <- eitherDecodeFileStrict' "testdata/system-user-removed.json" :: IO (Either String GitLabSystemEvent)
+                userRemoved `shouldSatisfy` isRight
+
     describe "Log grepping" $ do
         it "can find a sample error" $ do
             logText <- T.readFile "testdata/kill9failure.log"

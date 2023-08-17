@@ -21,6 +21,8 @@ module GitLabApi (
     RetryResult(..),
     JobWebUrlParseFailure(..),
     fetchJobLogs,
+    GitLabSystemEvent(..),
+    ProjectEventType(..),
 ) where
 
 import Data.Aeson (
@@ -55,6 +57,7 @@ import GHC.Generics (Generic)
 import Data.ByteString (ByteString)
 import Text.URI (mkURI)
 import Data.Text.Encoding (decodeUtf8)
+import Control.Applicative ((<|>))
 
 --
 -- GitLab API types and handlers
@@ -150,7 +153,7 @@ instance ToJSON BuildStatus where
 
 
 -----------------------------
--- * Job webhook request body
+-- * Job webhook
 -----------------------------
 
 
@@ -259,3 +262,31 @@ fetchJobLogs (GitLabToken tok) jobWebURL = do
                         (headerRedacted "PRIVATE-TOKEN" tok)
 
                 pure . Right . decodeUtf8 . responseBody $ response
+
+
+-------------------
+-- * System webhook
+-------------------
+
+
+data ProjectEventType = ProjectCreate | OtherProjectEvent
+    deriving stock (Show, Eq, Generic)
+
+instance FromJSON ProjectEventType where
+    parseJSON = withText "ProjectEventType" parseType
+        where
+            parseType "project_create" = pure ProjectCreate
+            parseType _ = pure OtherProjectEvent
+
+data GitLabSystemEvent
+    = ProjectSystemEvent ProjectEventType ProjectId
+    | OtherSystemEvent
+    deriving stock (Show, Eq, Generic)
+
+instance FromJSON GitLabSystemEvent where
+    parseJSON p = parseProject p <|> pure OtherSystemEvent
+        where
+            parseProject = withObject "GitLabSystemEvent" $ \v ->
+                ProjectSystemEvent
+                    <$> v .: "event_name"
+                    <*> v .: "project_id"
