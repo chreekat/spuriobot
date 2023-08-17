@@ -23,7 +23,6 @@ import Control.Concurrent.Classy (MonadConc)
 import Control.Monad.Catch (MonadThrow, MonadMask, MonadCatch)
 import Control.Monad.Trans (MonadIO, liftIO)
 import Control.Monad.Reader (ReaderT(..), MonadReader, withReaderT, asks)
-import Data.ByteString (ByteString, )
 import Data.ByteString qualified as BS
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -32,10 +31,11 @@ import Database.PostgreSQL.Simple (Connection)
 import Data.Pool (Pool, withResource)
 
 import {-# SOURCE #-} Spuriobot.RetryJob (RetryChan)
+import GitLabApi (GitLabToken)
 
 -- | Handler context (the Reader environment for the monad)
 data SpuriobotContext = SpuriobotContext
-    { apiToken :: ByteString
+    { apiToken :: GitLabToken
     , traceContext :: TraceContext
     , dbPool :: Pool Connection
     , retryChan :: RetryChan
@@ -70,5 +70,5 @@ runDB db_act =
     in withTrace "db" $ run_ =<< asks dbPool
 
 -- | Runner for 'Spuriobot' that basically just initializes the Reader environment.
-runSpuriobot :: MonadIO m => ByteString -> Pool Connection -> RetryChan -> Spuriobot a -> m a
+runSpuriobot :: MonadIO m => GitLabToken -> Pool Connection -> RetryChan -> Spuriobot a -> m a
 runSpuriobot tok pool chan (Spuriobot act) = liftIO $ runReaderT act (SpuriobotContext tok "" pool chan)

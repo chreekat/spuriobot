@@ -23,20 +23,7 @@ import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Text.Encoding (decodeUtf8)
-import Network.HTTP.Req (
-    NoReqBody (..),
-    bsResponse,
-    defaultHttpConfig,
-    headerRedacted,
-    req,
-    responseBody,
-    runReq,
-    useHttpsURI,
- )
-import qualified Network.HTTP.Req as R
 import qualified Text.Regex.TDFA as Regex
-import Text.URI (mkURI)
 import Data.Int (Int64)
 import Control.Monad
 import Control.Exception (throwIO)
@@ -63,35 +50,6 @@ import Spuriobot.RetryJob
 data SpuriobotException = ParseUrlFail
     deriving stock (Eq, Show)
     deriving anyclass Exception
-
--- | Get the raw job trace.
-fetchJobLogs :: JobWebURL -> Spuriobot Text
-fetchJobLogs jobWebURL = do
-    let mbUri = do
-            uri <- mkURI (jobWebURL <> "/raw")
-            (uri', _) <- useHttpsURI uri
-            pure uri'
-    case mbUri of
-        -- this error will only terminate the forked processFailure thread, so the
-        -- main process should keep listening and handling requests
-        -- FIXME: use throwError in the Handler monad
-        Nothing -> do
-            trace $ "error: could not parse URL: " <> jobWebURL
-            liftIO $ throwIO ParseUrlFail
-        Just uri -> do
-            tok <- asks apiToken
-            runReq defaultHttpConfig $ do
-                -- TODO handle redirect to login which is gitlab's way of saying 404
-                -- if re.search('users/sign_in$', resp.url):
-                response <-
-                    req
-                        R.GET
-                        uri
-                        NoReqBody
-                        bsResponse
-                        (headerRedacted "PRIVATE-TOKEN" tok)
-
-                pure . decodeUtf8 . responseBody $ response
 
 -- the code that we inject into the database
 type FailureErrorCode = Text
@@ -216,8 +174,17 @@ data Jobbo = Jobbo (Maybe JobFailureReason) Text
 processFailure :: GitLabBuildEvent -> Spuriobot ()
 processFailure GitLabBuildEvent { glbProjectId, glbBuildId } = do
     tok <- asks apiToken
-    jobInfo <- liftIO $ fetchJobInfo (GitLabToken tok) glbProjectId glbBuildId
-    logs <- fetchJobLogs (webUrl jobInfo)
+    jobInfo <- liftIO $ fetchJobInfo tok glbProjectId glbBuildId
+    logs <- do
+        l <- liftIO $ fetchJobLogs tok (webUrl jobInfo)
+        case l of
+            -- this error will only terminate the forked processFailure thread,
+            -- so the main process should keep listening and handling requests.
+            -- FIXME: use throwError in the Handler monad
+            Left (JobWebUrlParseFailure url) -> do
+                trace $ "error: could not parse URL: " <> url
+                liftIO $ throwIO ParseUrlFail
+            Right logs -> pure logs
     let jobbo = Jobbo (jobFailureReason jobInfo) logs
     let failures = collectFailures jobbo
     logFailures failures

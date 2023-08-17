@@ -118,7 +118,7 @@ retryService = loop M.empty where
             retry_action :: Spuriobot (Either HttpException JobId)
             retry_action = try $ do
                 tok <- asks apiToken
-                liftIO $ retryJobApi (GitLabToken tok) projectId jobId
+                liftIO $ retryJobApi tok projectId jobId
 
             policy = limitRetries 5 <> fullJitterBackoff halfSecond
                 where halfSecond = 500 * 1000

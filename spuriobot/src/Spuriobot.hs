@@ -25,7 +25,6 @@ import System.Environment (
  )
 import Control.Concurrent.Async (race_)
 import Control.Concurrent.Classy (fork)
-import Data.ByteString (ByteString, )
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding (encodeUtf8)
@@ -62,7 +61,7 @@ main = do
         [] -> pure ()
         (_:_) -> error "Usage: spuriobot"
 
-    strApiToken <- encodeUtf8 . T.pack <$> getEnv "GITLAB_API_TOKEN"
+    strApiToken <- GitLabToken . encodeUtf8 . T.pack <$> getEnv "GITLAB_API_TOKEN"
 
     -- Die early if no DB connection. (Laziness in createPool bites us
     -- otherwise.)
@@ -80,7 +79,7 @@ main = do
 spurioServer :: ServerT WebHookAPI Spuriobot
 spurioServer = jobEvent
 
-mainServer :: Token -> Pool Connection -> RetryChan -> Server WebHookAPI
+mainServer :: GitLabToken -> Pool Connection -> RetryChan -> Server WebHookAPI
 mainServer tok pool chan = hoistServer webhookAPI (runSpuriobot tok pool chan) spurioServer
 
 -- | This turns the job processor into a webhook endpoint by immediately forking
