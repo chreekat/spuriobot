@@ -300,21 +300,23 @@ instance FromJSON GitLabSystemEvent where
 newtype JobWebhook = JobWebhook Text
     deriving (Eq, Show)
 
+-- FIXME: If the url has 'https', set enable_ssl_verification to true.
 instance ToJSON JobWebhook where
-    toJSON (JobWebhook url) = object [ "url" .= url, "job_events" .= True ]
-    toEncoding (JobWebhook url) = pairs ("url" .= url <> "job_events" .= True)
+    toJSON (JobWebhook url) = object [ "url" .= url, "job_events" .= True, "enable_ssl_verification" .= False ]
+    toEncoding (JobWebhook url) = pairs ("url" .= url <> "job_events" .= True <> "enable_ssl_verification" .= False)
 
 -- | Add a build webhook to a project
-addProjectBuildHook :: GitLabToken -> ProjectId -> JobWebhook -> IO ()
+addProjectBuildHook :: GitLabToken -> ProjectId -> Text -> IO ()
 addProjectBuildHook (GitLabToken tok) (ProjectId projId) hook =
     fmap responseBody $ runReq defaultHttpConfig $
         req
             R.POST
             projectHookUrl
-            (ReqBodyJson hook)
+            body
             ignoreResponse
             (headerRedacted "PRIVATE-TOKEN" tok)
     where
+        body = ReqBodyJson (JobWebhook hook)
         projectHookUrl =
             https "gitlab.haskell.org"
                 /: "api"

@@ -47,7 +47,6 @@ import Control.Monad.Reader (asks)
 
 -- | API served by this app
 type WebHookAPI =
-    -- FIXME: Keep this in sync with the @myhook@ declaration below.
     "spuriobot" :> ReqBody '[JSON] GitLabBuildEvent :> Post '[JSON] ()
     :<|> "spuriobot_system" :> ReqBody '[JSON] GitLabSystemEvent :> Post '[JSON] ()
     -- Backward compat top-level endpoint duplicating the "spuriobot" endpoint.
@@ -67,8 +66,6 @@ main = do
         (_:_) -> error "Usage: spuriobot"
 
     strApiToken <- GitLabToken . encodeUtf8 . T.pack <$> getEnv "GITLAB_API_TOKEN"
-    -- FIXME: Keep this in sync with the Servant API description above.
-    myhook <- JobWebhook . (<> "/spuriobot") . T.pack <$> getEnv "SPURIOBOT_URI"
 
     -- Die early if no DB connection. (Laziness in createPool bites us
     -- otherwise.)
@@ -80,8 +77,8 @@ main = do
     chan <- RetryChan <$> newChan
 
     race_
-        (runSpuriobot strApiToken pool chan myhook retryService)
-        (run 8080 $ logStdout $ serve webhookAPI (mainServer strApiToken pool chan myhook))
+        (runSpuriobot strApiToken pool chan retryService)
+        (run 8080 $ logStdout $ serve webhookAPI (mainServer strApiToken pool chan))
 
 spurioServer :: ServerT WebHookAPI Spuriobot
 spurioServer = jobEvent :<|> systemEvent :<|> jobEvent
@@ -89,8 +86,8 @@ spurioServer = jobEvent :<|> systemEvent :<|> jobEvent
         jobEvent = mkHook (showt . glbBuildId) processBuildEvent
         systemEvent = mkHook (const "system") processSystemEvent
 
-mainServer :: GitLabToken -> Pool Connection -> RetryChan -> JobWebhook -> Server WebHookAPI
-mainServer tok pool chan hook = hoistServer webhookAPI (runSpuriobot tok pool chan hook) spurioServer
+mainServer :: GitLabToken -> Pool Connection -> RetryChan -> Server WebHookAPI
+mainServer tok pool chan = hoistServer webhookAPI (runSpuriobot tok pool chan) spurioServer
 
 -- | This turns the a request processor into a webhook endpoint by immediately
 -- forking to do the real work.
@@ -130,9 +127,8 @@ processSystemEvent OtherSystemEvent = trace "skipping other system event"
 
 installHook :: ProjectId -> Spuriobot ()
 installHook projId = do
-    endpoint <- asks mySpurioEndpoint
     tok <- asks apiToken
-    liftIO $ addProjectBuildHook tok projId endpoint
+    liftIO $ addProjectBuildHook tok projId "http://127.0.0.1:8080/spuriobot"
     trace "hook installed"
 
 --
