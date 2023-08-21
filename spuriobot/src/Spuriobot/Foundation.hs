@@ -31,7 +31,7 @@ import Database.PostgreSQL.Simple (Connection)
 import Data.Pool (Pool, withResource)
 
 import {-# SOURCE #-} Spuriobot.RetryJob (RetryChan)
-import GitLabApi (GitLabToken)
+import GitLabApi (GitLabToken, JobWebhook)
 
 -- | Handler context (the Reader environment for the monad)
 data SpuriobotContext = SpuriobotContext
@@ -39,6 +39,7 @@ data SpuriobotContext = SpuriobotContext
     , traceContext :: TraceContext
     , dbPool :: Pool Connection
     , retryChan :: RetryChan
+    , mySpurioEndpoint :: JobWebhook
     }
 
 -- | Version 0 of tracing is running handlers in a context where there's a logging
@@ -70,5 +71,5 @@ runDB db_act =
     in withTrace "db" $ run_ =<< asks dbPool
 
 -- | Runner for 'Spuriobot' that basically just initializes the Reader environment.
-runSpuriobot :: MonadIO m => GitLabToken -> Pool Connection -> RetryChan -> Spuriobot a -> m a
-runSpuriobot tok pool chan (Spuriobot act) = liftIO $ runReaderT act (SpuriobotContext tok "" pool chan)
+runSpuriobot :: MonadIO m => GitLabToken -> Pool Connection -> RetryChan -> JobWebhook -> Spuriobot a -> m a
+runSpuriobot tok pool chan hook (Spuriobot act) = liftIO $ runReaderT act (SpuriobotContext tok "" pool chan hook)

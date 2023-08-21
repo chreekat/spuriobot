@@ -23,22 +23,18 @@ module GitLabApi (
     fetchJobLogs,
     GitLabSystemEvent(..),
     ProjectEventType(..),
+    JobWebhook(..),
+    addProjectBuildHook,
 ) where
 
-import Data.Aeson (
-    FromJSON,
-    parseJSON,
-    withObject,
-    withText,
-    (.:),
-    (.:?), ToJSON, toJSON,
- )
+import Data.Aeson
 import qualified Data.Aeson.Types as Aeson
 import qualified Data.Attoparsec.Text as AttoText
 import qualified Data.Attoparsec.Time as Atto
 import Data.Text (Text)
 import Network.HTTP.Req (
     NoReqBody (..),
+    ReqBodyJson (..),
     defaultHttpConfig,
     headerRedacted,
     https,
@@ -46,7 +42,7 @@ import Network.HTTP.Req (
     req,
     responseBody,
     runReq,
-    (/:), (/~), useHttpsURI, bsResponse,
+    (/:), (/~), useHttpsURI, bsResponse, ignoreResponse,
  )
 import qualified Network.HTTP.Req as R
 import Data.Time (UTCTime)
@@ -290,3 +286,29 @@ instance FromJSON GitLabSystemEvent where
                 ProjectSystemEvent
                     <$> v .: "event_name"
                     <*> v .: "project_id"
+
+newtype JobWebhook = JobWebhook Text
+    deriving (Eq, Show)
+
+instance ToJSON JobWebhook where
+    toJSON (JobWebhook url) = object [ "url" .= url, "job_events" .= True ]
+    toEncoding (JobWebhook url) = pairs ("url" .= url <> "job_events" .= True)
+
+-- | Add a build webhook to a project
+addProjectBuildHook :: GitLabToken -> ProjectId -> JobWebhook -> IO ()
+addProjectBuildHook (GitLabToken tok) (ProjectId projId) hook =
+    fmap responseBody $ runReq defaultHttpConfig $
+        req
+            R.POST
+            projectHookUrl
+            (ReqBodyJson hook)
+            ignoreResponse
+            (headerRedacted "PRIVATE-TOKEN" tok)
+    where
+        projectHookUrl =
+            https "gitlab.haskell.org"
+                /: "api"
+                /: "v4"
+                /: "projects"
+                /~ projId
+                /: "hooks"

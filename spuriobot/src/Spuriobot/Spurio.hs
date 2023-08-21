@@ -12,10 +12,10 @@ module Spuriobot.Spurio (
     Check(..),
     Jobbo(..),
     logFailures,
-    processBuildEvent,
+    processFailure,
 ) where
 
-import Control.Monad.Catch (finally, Exception)
+import Control.Monad.Catch (Exception)
 import Control.Monad.Trans (liftIO)
 import Control.Monad.Reader (asks)
 import Data.Maybe (mapMaybe)
@@ -151,21 +151,6 @@ logFailures failures
     | otherwise = forM_
         (S.toList failures)
         ( \(_, msg) -> trace msg)
-
--- | Top-level handler for the GitLab job event
--- https://docs.gitlab.com/ee/user/project/integrations/webhook_events.html#job-events
-processBuildEvent :: GitLabBuildEvent -> Spuriobot ()
-processBuildEvent ev = do
-    case glbFinishedAt ev of
-        Nothing -> trace "skipping unfinished job"
-        -- FIXME explain use of clearRetry here.
-        Just _ -> withTrace "finished" $ processFinishedJob ev `finally` clearRetry (glbBuildId ev)
-
-processFinishedJob :: GitLabBuildEvent -> Spuriobot ()
-processFinishedJob ev = do
-    case glbBuildStatus ev of
-        OtherBuildStatus x -> trace x
-        Failed -> withTrace "failed" $ processFailure ev
 
 -- | Characteristics of a job that we test against.
 data Jobbo = Jobbo (Maybe JobFailureReason) Text
