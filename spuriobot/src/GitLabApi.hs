@@ -241,11 +241,10 @@ fetchJobLogs (GitLabToken tok) jobWebURL = do
     let url = jobWebURL <> "/raw"
         mbUri = do
             uri <- mkURI url
-            (uri', _) <- useHttpsURI uri
-            pure uri'
+            useHttpsURI uri
     case mbUri of
         Nothing -> pure (Left (JobWebUrlParseFailure url))
-        Just uri -> do
+        Just (uri, opt) -> do
             runReq defaultHttpConfig $ do
                 -- TODO handle redirect to login which is gitlab's way of saying 404
                 -- if re.search('users/sign_in$', resp.url):
@@ -255,7 +254,7 @@ fetchJobLogs (GitLabToken tok) jobWebURL = do
                         uri
                         NoReqBody
                         bsResponse
-                        (headerRedacted "PRIVATE-TOKEN" tok)
+                        (opt <> headerRedacted "PRIVATE-TOKEN" tok)
 
                 pure . Right . decodeUtf8 . responseBody $ response
 
