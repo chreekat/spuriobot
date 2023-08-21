@@ -97,9 +97,9 @@
               # With these settings, I want to make sure the bot dies only if
               # it's *really* misbehaving. But in general, I don't have good
               # intuition for what these values should be.
-              serviceConfig.RestartSec = "1s";
-              startLimitIntervalSec = "30s";
-              startLimitBurst = "20";
+              serviceConfig.RestartSec = 1;
+              startLimitIntervalSec = 30;
+              startLimitBurst = 20;
             };
           };
         };
