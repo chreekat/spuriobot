@@ -29,16 +29,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding (encodeUtf8)
 import Network.Wai.Middleware.RequestLogger (logStdout)
-import Servant (
-    JSON,
-    Post,
-    Proxy (..),
-    ReqBody,
-    Server,
-    hoistServer,
-    serve,
-    (:>), ServerT,
- )
+import Servant
 import Database.PostgreSQL.Simple (Connection)
 import Data.Pool (Pool, createPool)
 import Control.Monad (void)
@@ -50,6 +41,9 @@ import GitLabApi
 import Spuriobot.RetryJob
 import Spuriobot.Foundation
 import Spuriobot.Spurio
+import Control.Monad.Catch (finally)
+import Control.Monad.Trans (liftIO)
+import Control.Monad.Reader (asks)
 
 main :: IO ()
 main = do
