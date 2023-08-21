@@ -27,13 +27,12 @@ import qualified Text.Regex.TDFA as Regex
 import Data.Int (Int64)
 import Control.Monad
 import Control.Exception (throwIO)
-
-import qualified Spuriobot.DB as DB
-
+import Text.URI (render)
 
 import GitLabApi
 import Spuriobot.Foundation
 import Spuriobot.RetryJob
+import qualified Spuriobot.DB as DB
 
 --
 -- Helpers
@@ -167,7 +166,7 @@ processFailure GitLabBuildEvent { glbProjectId, glbBuildId } = do
             -- so the main process should keep listening and handling requests.
             -- FIXME: use throwError in the Handler monad
             Left (JobWebUrlParseFailure url) -> do
-                trace $ "error: could not parse URL: " <> url
+                trace $ "error: could not parse URL: " <> render url
                 liftIO $ throwIO ParseUrlFail
             Right logs -> pure logs
     let jobbo = Jobbo (jobFailureReason jobInfo) logs
@@ -180,5 +179,6 @@ processFailure GitLabBuildEvent { glbProjectId, glbBuildId } = do
 -- | Map between our types and the DB's types
 mkDBFailures :: Functor f => Int64 -> JobInfo -> f Failure -> f DB.Failure
 mkDBFailures jobId JobInfo { jobDate, webUrl, runnerId } fails =
-    let mk (code, _) = DB.Failure jobId code jobDate webUrl runnerId
+    let mk (code, _) = DB.Failure jobId code jobDate (render' webUrl) runnerId
+        render' (JobWebURI uri) = render uri
     in fmap mk fails

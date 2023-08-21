@@ -12,7 +12,6 @@ module GitLabApi (
     GitLabToken(..),
     ProjectId (..),
     JobId,
-    JobWebUrl,
     fetchJobInfo,
     JobInfo(..),
     JobFailureReason(..),
@@ -25,6 +24,7 @@ module GitLabApi (
     ProjectEventType(..),
     JobWebhook(..),
     addProjectBuildHook,
+    JobWebURI(..)
 ) where
 
 import Data.Aeson
@@ -42,7 +42,7 @@ import Network.HTTP.Req (
     req,
     responseBody,
     runReq,
-    (/:), (/~), useHttpsURI, bsResponse, ignoreResponse,
+    (/:), (/~), bsResponse, ignoreResponse, useURI,
  )
 import qualified Network.HTTP.Req as R
 import Data.Time (UTCTime)
@@ -51,7 +51,7 @@ import Data.Time.LocalTime (localTimeToUTC, utc)
 
 import GHC.Generics (Generic)
 import Data.ByteString (ByteString)
-import Text.URI (mkURI)
+import Text.URI (mkURI, URI)
 import Data.Text.Encoding (decodeUtf8)
 import Control.Applicative ((<|>))
 
@@ -91,7 +91,6 @@ newtype ProjectId = ProjectId {unProjectId :: Int}
 
 -- TODO convert to newtype when the fancy strikes
 type JobId = Int64
-type JobWebUrl = Text
 
 ----------------------
 -- * /job API endpoint
@@ -108,7 +107,7 @@ type JobWebUrl = Text
 -- Informally, we use BuildEvent to decide whether or not to check the job for
 -- failures, and the /job endpoint for everything else.
 data JobInfo = JobInfo
-    { webUrl :: JobWebUrl
+    { webUrl :: JobWebURI
     , runnerId :: Maybe Int64
     -- ^ GitLab can "lose" this information
     , jobDate :: UTCTime
@@ -233,25 +232,37 @@ retryJobApi (GitLabToken tok) (ProjectId projectId) jobId =
 -- * /job/<job-id>/raw
 ----------------------
 
-newtype JobWebUrlParseFailure = JobWebUrlParseFailure Text
+newtype JobWebUrlParseFailure = JobWebUrlParseFailure URI
+
+newtype JobWebURI = JobWebURI URI
+    deriving (Eq, Show)
+
+instance FromJSON JobWebURI where
+    parseJSON = withText "JobWebURI" $ \v -> do
+        maybe (fail "could not parse URI") (pure . JobWebURI) (mkURI v)
 
 -- | Get the raw job trace. The JobWebUrl may fail to parse.
-fetchJobLogs :: GitLabToken -> JobWebUrl -> IO (Either JobWebUrlParseFailure Text)
-fetchJobLogs (GitLabToken tok) jobWebURL = do
-    let url = jobWebURL <> "/raw"
-        mbUri = do
-            uri <- mkURI url
-            useHttpsURI uri
-    case mbUri of
-        Nothing -> pure (Left (JobWebUrlParseFailure url))
-        Just (uri, opt) -> do
-            runReq defaultHttpConfig $ do
+--
+-- This function uses the web UI rather than the actual GitLab JSON API. That's
+-- because the trace endpoint of the API is very slow.
+fetchJobLogs :: GitLabToken -> JobWebURI -> IO (Either JobWebUrlParseFailure Text)
+fetchJobLogs (GitLabToken tok) (JobWebURI jobURI) =
+    let url = useURI jobURI
+    in case url of
+        Just (Left (url', opt)) -> fetch_job_raw url' opt
+        Just (Right (url', opt)) -> fetch_job_raw url' opt
+        Nothing -> pure (Left (JobWebUrlParseFailure jobURI))
+
+    where
+        fetch_job_raw url opt =
+            let raw_url = url /: "raw"
+            in runReq defaultHttpConfig $ do
                 -- TODO handle redirect to login which is gitlab's way of saying 404
                 -- if re.search('users/sign_in$', resp.url):
                 response <-
                     req
                         R.GET
-                        uri
+                        raw_url
                         NoReqBody
                         bsResponse
                         (opt <> headerRedacted "PRIVATE-TOKEN" tok)
