@@ -120,9 +120,9 @@ processFinishedJob ev = do
 -- https://gitlab.haskell.org/help/administration/system_hooks
 processSystemEvent :: GitLabSystemEvent -> Spuriobot ()
 processSystemEvent (ProjectSystemEvent ProjectCreate projId) =
-    withTrace ("project " <> showt projId) (installHook projId)
+    withTrace ("project " <> showt (unProjectId projId)) (installHook projId)
 processSystemEvent (ProjectSystemEvent OtherProjectEvent projId) =
-    withTrace ("project " <> showt projId) (trace "skipping other project event")
+    withTrace ("project " <> showt (unProjectId projId)) (trace "skipping other project event")
 processSystemEvent OtherSystemEvent = trace "skipping other system event"
 
 installHook :: ProjectId -> Spuriobot ()
