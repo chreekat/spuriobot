@@ -301,9 +301,21 @@ newtype JobWebhook = JobWebhook Text
     deriving (Eq, Show)
 
 -- FIXME: If the url has 'https', set enable_ssl_verification to true.
+--
+-- NB: push_events defaults to True
 instance ToJSON JobWebhook where
-    toJSON (JobWebhook url) = object [ "url" .= url, "job_events" .= True, "enable_ssl_verification" .= False ]
-    toEncoding (JobWebhook url) = pairs ("url" .= url <> "job_events" .= True <> "enable_ssl_verification" .= False)
+    toJSON (JobWebhook url) = object
+        [ "url" .= url
+        , "job_events" .= True
+        , "push_events" .= False
+        , "enable_ssl_verification" .= False
+        ]
+    toEncoding (JobWebhook url) = pairs
+        ("url" .= url
+        <> "job_events" .= True
+        <> "push_events" .= False
+        <> "enable_ssl_verification" .= False
+        )
 
 -- | Add a build webhook to a project
 addProjectBuildHook :: GitLabToken -> ProjectId -> Text -> IO ()
