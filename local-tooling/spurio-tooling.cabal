@@ -36,3 +36,7 @@ executable ci-failure-update
 executable fetch-job-data
     import: defaults, deps
     main-is: fetch-job-data.hs
+
+executable spread-spuriobot
+    import: defaults, deps
+    main-is: spread-spuriobot.hs
