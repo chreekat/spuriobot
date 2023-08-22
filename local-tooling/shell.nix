@@ -1,1 +1,4 @@
-(import ./. {}).spurious-failures.env
+let
+  flake = builtins.getFlake (toString ./.);
+in
+  flake.devShells."${builtins.currentSystem}".default
