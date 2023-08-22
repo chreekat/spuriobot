@@ -10,6 +10,7 @@
 module GitLabApi (
     GitLabBuildEvent (..),
     GitLabToken(..),
+    GitLabTime(..),
     ProjectId (..),
     JobId,
     fetchJobInfo,

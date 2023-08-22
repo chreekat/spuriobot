@@ -20,6 +20,9 @@ import Spuriobot.Spurio
 main :: IO ()
 main = hspec $ do
     describe "Deserialise GitLab REST data" $ do
+        it "can read a GitLab Time" $ do
+            let time = eitherDecodeStrict' "\"2023-08-21 03:49:15 UTC\""
+            time `shouldBe` Right (GitLabTime (read "2023-08-21 03:49:15"))
         it "can read a GitLabBuildEvent" $ do
             eiDecoded <- eitherDecodeFileStrict' "testdata/no-spurio.json" :: IO (Either String GitLabBuildEvent)
             eiDecoded `shouldSatisfy` isRight
