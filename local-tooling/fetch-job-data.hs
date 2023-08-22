@@ -1,6 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE QuasiQuotes #-}
@@ -78,7 +77,7 @@ instance FromRow Job where
     fromRow = Job <$> field <*> field <*> field <*> field
 
 v .:: key = \subkey -> do
-    subobj <- v .: (fromString key)
+    subobj <- v .: fromString key
     withObject key (.: subkey) subobj
 
 instance FromJSON Job where
@@ -115,7 +114,7 @@ fetchJobs key (minDate, maxDate) jobUrl connVar = do
     nextLink <- head <$> responseLinks "rel" "next" resp
     let jobs = responseBody resp
 
-    let (msg, res) = f jobs nextLink where
+    let (msg, res) = f jobs nextLink
         -- Check if we're still in the age range
         tooYoung j = createdAt j > maxDate
         tooOld j = createdAt j < minDate
@@ -127,7 +126,7 @@ fetchJobs key (minDate, maxDate) jobUrl connVar = do
 
 -- | Get all jobs withen a given age range.
 getJobs key dateRange jobUrl connVar = do
-    logg $ "Get " <> (T.encodeUtf8 (render jobUrl))
+    logg $ "Get " <> T.encodeUtf8 (render jobUrl)
     res <- lift $ fetchJobs key dateRange jobUrl connVar
     case res of
         NoMore jobs -> pure jobs
@@ -151,7 +150,7 @@ reqq method url body resp opts = liftIO $ runReq defaultHttpConfig (req method u
 
 -- | Get the trace for a job
 getTrace key j = do
-    logg $ "GET TRACE " <> (bstr (show (jobId j)))
+    logg $ "GET TRACE " <> bstr (show (jobId j))
     let Just (u,o) = useHttpsURI =<< mkURI (webUrl j)
     resp <- reqq GET (u /: "raw") NoReqBody bsResponse (o <> header "PRIVATE-TOKEN" key)
     pure $ Trace
@@ -173,7 +172,7 @@ logg = liftIO . BS.hPutStrLn stderr
 -- | Make atomic db access via atomic access to the Connection.
 bracketDB msg v
     = liftIO
-    . bracket (do c <- atomically (takeTMVar v); logg ("OPEN " <> msg); pure c) (\c -> logg ("CLOSE " <> msg) >> (atomically (putTMVar v c)))
+    . bracket (do c <- atomically (takeTMVar v); logg ("OPEN " <> msg); pure c) (\c -> logg ("CLOSE " <> msg) >> atomically (putTMVar v c))
 
 -- | Concurrently insert all staged jobs.
 clearStagedJobs key connVar = do
@@ -186,7 +185,7 @@ clearStagedJobs key connVar = do
             on j.job_id = t.rowid
             where t.rowid is null
         |]
-    logg ("CLEAR " <> (bstr (show (length jobs))) <> " JOBS")
+    logg ("CLEAR " <> bstr (show (length jobs)) <> " JOBS")
     parMapM (insertJob key connVar) jobs
 
 -- | Fetch jobs and dump them in the job table
@@ -211,7 +210,7 @@ initDatabase connVar = do
     |]
 
 main = do
-    connVar <- atomically . newTMVar =<< open "jobs.db"
+    connVar <- newTMVarIO =<< open "jobs.db"
     {-
      - I'm not sure I know what I'm doing with this, so I'll stop using it.
     bracketDB "set pragmas" connVar $ \conn -> do
