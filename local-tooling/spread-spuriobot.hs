@@ -29,5 +29,5 @@ main = do
         url
         NoReqBody
         jsonResponse
-        ("simple" =: True <> "per_page" =: (100 :: Word) <> headerRedacted "PRIVATE_TOKEN" strApiToken)
+        ("simple" =: True <> "per_page" =: (100 :: Word) <> header "PRIVATE_TOKEN" strApiToken)
     print ps
