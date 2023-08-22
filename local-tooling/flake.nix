@@ -1,5 +1,4 @@
 {
-  # inputs.nixpkgs.url = "github:nixos/nixpkgs/release-22.11";
   outputs = { self, nixpkgs, ... }:
     let
       hsOverlay = pkgs: self: super: {
