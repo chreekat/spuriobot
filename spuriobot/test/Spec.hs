@@ -4,6 +4,7 @@ import Data.Aeson
 import Data.Either (
     isRight,
  )
+import Data.Maybe
 import qualified Data.Set as S
 import Data.Text.IO as T
 import Test.Hspec (
@@ -12,7 +13,8 @@ import Test.Hspec (
     it,
     shouldBe,
     shouldSatisfy,
- )
+  )
+import Text.URI
 
 import GitLabApi
 import Spuriobot.Spurio
@@ -29,6 +31,16 @@ main = hspec $ do
         it "can read a job retry response" $ do
             eiDecoded <- eitherDecodeFileStrict' "testdata/retry-response.json" :: IO (Either String RetryResult)
             eiDecoded `shouldSatisfy` isRight
+        it "can read a JobInfo" $ do
+            job <- eitherDecodeFileStrict' "testdata/jobinfo.json" :: IO (Either String JobInfo)
+            let url = JobWebURI (fromJust (mkURI "https://gitlab.haskell.org/ghc/ghc/-/jobs/1593505"))
+            job `shouldBe` Right
+                (JobInfo
+                    url
+                    (Just 142)
+                    (Just "x86-64-win-2.zw3rk.com")
+                    (read "2023-07-07 11:37:37.576")
+                    (Just (OtherReason "trace_size_exceeded")))
         describe "System events" $ do
             it "can read a project creation event" $ do
                 projCreated <- eitherDecodeFileStrict' "testdata/project-creation-event.json" :: IO (Either String GitLabSystemEvent)

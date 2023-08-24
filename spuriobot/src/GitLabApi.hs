@@ -110,7 +110,8 @@ type JobId = Int64
 data JobInfo = JobInfo
     { webUrl :: JobWebURI
     , runnerId :: Maybe Int64
-    -- ^ GitLab can "lose" this information
+    , runnerName :: Maybe Text
+    -- ^ GitLab can "lose" runner info, so runner fileds are 'Maybe'
     , jobDate :: UTCTime
     , jobFailureReason :: Maybe JobFailureReason
     }
@@ -121,6 +122,7 @@ instance FromJSON JobInfo where
         JobInfo
             <$> o .: "web_url"
             <*> (o .:? "runner" >>= maybe (pure Nothing) (.: "id"))
+            <*> (o .:? "runner" >>= maybe (pure Nothing) (.: "description"))
             <*> o .: "created_at"
             <*> o .:? "failure_reason"
 
