@@ -33,5 +33,6 @@ create table if not exists ci_failure (
     job_date timestamp with time zone NULL,
     web_url text NULL,
     runner_id bigint NULL,
+    runner_name text NULL,
     constraint unique_job_failure unique (job_id, type)
 );
