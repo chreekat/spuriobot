@@ -125,6 +125,12 @@ fetchJobs key (minDate, maxDate) jobUrl connVar = do
     pure res
 
 -- | Get all jobs withen a given age range.
+getJobs
+    :: BS.ByteString
+    -> (UTCTime, UTCTime)
+    -> URI
+    -> t
+    -> ListT IO [Job]
 getJobs key dateRange jobUrl connVar = do
     logg $ "Get " <> T.encodeUtf8 (render jobUrl)
     res <- lift $ fetchJobs key dateRange jobUrl connVar
