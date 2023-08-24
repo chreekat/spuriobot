@@ -178,7 +178,7 @@ processFailure GitLabBuildEvent { glbProjectId, glbBuildId } = do
 
 -- | Map between our types and the DB's types
 mkDBFailures :: Functor f => Int64 -> JobInfo -> f Failure -> f DB.Failure
-mkDBFailures jobId JobInfo { jobDate, webUrl, runnerId } fails =
-    let mk (code, _) = DB.Failure jobId code jobDate (render' webUrl) runnerId
+mkDBFailures jobId JobInfo { jobDate, webUrl, runnerId, runnerName } fails =
+    let mk (code, _) = DB.Failure jobId code jobDate (render' webUrl) runnerId runnerName
         render' (JobWebURI uri) = render uri
     in fmap mk fails
