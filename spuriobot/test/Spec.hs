@@ -31,15 +31,15 @@ main = hspec $ do
         it "can read a job retry response" $ do
             eiDecoded <- eitherDecodeFileStrict' "testdata/retry-response.json" :: IO (Either String RetryResult)
             eiDecoded `shouldSatisfy` isRight
-        it "can read a JobInfo" $ do
-            job <- eitherDecodeFileStrict' "testdata/jobinfo.json" :: IO (Either String JobInfo)
+        it "can read a FinishedJob" $ do
+            job <- eitherDecodeFileStrict' "testdata/jobinfo.json" :: IO (Either String FinishedJob)
             let url = JobWebURI (fromJust (mkURI "https://gitlab.haskell.org/ghc/ghc/-/jobs/1593505"))
             job `shouldBe` Right
-                (JobInfo
+                (FinishedJob
                     url
                     (Just 142)
                     (Just "x86-64-win-2.zw3rk.com")
-                    (read "2023-07-07 11:37:37.576")
+                    (read "2023-07-07 17:30:53.227")
                     (Just (OtherReason "trace_size_exceeded"))
                     "x86_64-windows-validate")
         it "can read a Project" $ do

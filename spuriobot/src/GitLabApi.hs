@@ -13,9 +13,9 @@ module GitLabApi (
     GitLabTime(..),
     ProjectId (..),
     JobId,
-    fetchJobInfo,
+    fetchFinishedJob,
     fetchProject,
-    JobInfo(..),
+    FinishedJob(..),
     Project(..),
     JobFailureReason(..),
     BuildStatus(..),
@@ -102,31 +102,34 @@ type JobId = Int64
 
 
 
--- | The data we get from the /job API endpoint.
+-- | The data we get from the /job API endpoint for finished jobs.
 --
 -- Most of what we need could come from the BuildEvent, but the web_url in
 -- particular is missing, so it's not sufficient for our use.
 --
 -- Informally, we use BuildEvent to decide whether or not to check the job for
 -- failures, and the /job endpoint for everything else.
-data JobInfo = JobInfo
+--
+-- That the job is actually finished is not checked. However, by assuming it
+-- *is* finished, we know that jobFinishedAt is guaranteed to exist.
+data FinishedJob = FinishedJob
     { webUrl :: JobWebURI
     , runnerId :: Maybe Int64
     , runnerName :: Maybe Text
-    -- ^ GitLab can "lose" runner info, so runner fileds are 'Maybe'
-    , jobDate :: UTCTime
+    -- ^ GitLab can "lose" runner info, so runner fields are 'Maybe'
+    , jobFinishedAt :: UTCTime
     , jobFailureReason :: Maybe JobFailureReason
     , jobName :: Text
     }
     deriving (Show, Eq)
 
-instance FromJSON JobInfo where
-    parseJSON = withObject "JobInfo" $ \o ->
-        JobInfo
+instance FromJSON FinishedJob where
+    parseJSON = withObject "FinishedJob" $ \o ->
+        FinishedJob
             <$> o .: "web_url"
             <*> (o .:? "runner" >>= maybe (pure Nothing) (.: "id"))
             <*> (o .:? "runner" >>= maybe (pure Nothing) (.: "description"))
-            <*> o .: "created_at"
+            <*> o .: "finished_at"
             <*> o .:? "failure_reason"
             <*> o .: "name"
 
@@ -216,8 +219,8 @@ instance FromJSON GitLabBuildEvent where
             <*> v .: "build_finished_at"
 
 -- | Get /jobs/<job-id>
-fetchJobInfo :: GitLabToken -> ProjectId -> JobId -> IO JobInfo
-fetchJobInfo (GitLabToken tok) (ProjectId projectId) jobId = do
+fetchFinishedJob :: GitLabToken -> ProjectId -> JobId -> IO FinishedJob
+fetchFinishedJob (GitLabToken tok) (ProjectId projectId) jobId = do
     fmap responseBody $ runReq defaultHttpConfig $
         req
             R.GET

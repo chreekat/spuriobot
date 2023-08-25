@@ -158,8 +158,8 @@ data Jobbo = Jobbo (Maybe JobFailureReason) Text
 processFailure :: GitLabBuildEvent -> Spuriobot ()
 processFailure GitLabBuildEvent { glbProjectId, glbBuildId } = do
     tok <- asks apiToken
-    jobInfo <- liftIO $ fetchJobInfo tok glbProjectId glbBuildId
-    proj <- liftIO $ fetchProject tok glbProjectId
+    jobInfo <- liftIO $ fetchFinishedJob tok glbProjectId glbBuildId
+    projInfo <- liftIO $ fetchProject tok glbProjectId
     logs <- do
         l <- liftIO $ fetchJobLogs tok (webUrl jobInfo)
         case l of
@@ -173,13 +173,13 @@ processFailure GitLabBuildEvent { glbProjectId, glbBuildId } = do
     let jobbo = Jobbo (jobFailureReason jobInfo) logs
     let failures = collectFailures jobbo
     logFailures failures
-    void $ runDB $ DB.insertFailures (mkDBFailures glbBuildId jobInfo proj (S.toList failures))
+    void $ runDB $ DB.insertFailures (mkDBFailures glbBuildId jobInfo projInfo (S.toList failures))
     unless (S.null failures) $
         withTrace "retrying" $ retryJob glbProjectId glbBuildId
 
 -- | Map between our types and the DB's types
-mkDBFailures :: Functor f => Int64 -> JobInfo -> Project -> f Failure -> f DB.Failure
-mkDBFailures jobId JobInfo { jobDate, webUrl, runnerId, runnerName, jobName } Project { projPath } fails =
-    let mk (code, _) = DB.Failure jobId code jobDate (render' webUrl) runnerId runnerName jobName projPath
+mkDBFailures :: Functor f => Int64 -> FinishedJob -> Project -> f Failure -> f DB.Failure
+mkDBFailures jobId FinishedJob { jobFinishedAt, webUrl, runnerId, runnerName, jobName } Project { projPath } fails =
+    let mk (code, _) = DB.Failure jobId code jobFinishedAt (render' webUrl) runnerId runnerName jobName projPath
         render' (JobWebURI uri) = render uri
     in fmap mk fails
