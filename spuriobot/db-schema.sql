@@ -35,5 +35,6 @@ create table if not exists ci_failure (
     runner_id bigint NULL,
     runner_name text NULL,
     job_name text NULL,
+    project_path text NULL,
     constraint unique_job_failure unique (job_id, type)
 );

@@ -14,7 +14,9 @@ module GitLabApi (
     ProjectId (..),
     JobId,
     fetchJobInfo,
+    fetchProject,
     JobInfo(..),
+    Project(..),
     JobFailureReason(..),
     BuildStatus(..),
     retryJobApi,
@@ -150,6 +152,42 @@ instance FromJSON BuildStatus where
 instance ToJSON BuildStatus where
     toJSON Failed = "failed"
     toJSON (OtherBuildStatus x) = toJSON x
+
+
+
+
+--------------------------
+-- * /project API endpoint
+--------------------------
+
+
+-- | Data from the /project API endpoint. Just used to store as metadata when
+-- recording failures.
+newtype Project = Project
+    { projPath :: Text
+    } deriving (Eq, Show)
+
+instance FromJSON Project where
+    parseJSON = withObject "Project" $ \o ->
+        Project
+            <$> o .: "path_with_namespace"
+
+fetchProject :: GitLabToken -> ProjectId -> IO Project
+fetchProject (GitLabToken tok) (ProjectId projectId) = do
+    fmap responseBody $ runReq defaultHttpConfig $
+        req
+            R.GET
+            ( https
+                "gitlab.haskell.org"
+                /: "api"
+                /: "v4"
+                /: "projects"
+                /~ projectId
+            )
+            NoReqBody
+            jsonResponse
+            (headerRedacted "PRIVATE-TOKEN" tok)
+
 
 
 -----------------------------
