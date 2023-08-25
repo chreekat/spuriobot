@@ -40,7 +40,8 @@ main = hspec $ do
                     (Just 142)
                     (Just "x86-64-win-2.zw3rk.com")
                     (read "2023-07-07 11:37:37.576")
-                    (Just (OtherReason "trace_size_exceeded")))
+                    (Just (OtherReason "trace_size_exceeded"))
+                    "x86_64-windows-validate")
         describe "System events" $ do
             it "can read a project creation event" $ do
                 projCreated <- eitherDecodeFileStrict' "testdata/project-creation-event.json" :: IO (Either String GitLabSystemEvent)

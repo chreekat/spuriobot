@@ -114,6 +114,7 @@ data JobInfo = JobInfo
     -- ^ GitLab can "lose" runner info, so runner fileds are 'Maybe'
     , jobDate :: UTCTime
     , jobFailureReason :: Maybe JobFailureReason
+    , jobName :: Text
     }
     deriving (Show, Eq)
 
@@ -125,6 +126,7 @@ instance FromJSON JobInfo where
             <*> (o .:? "runner" >>= maybe (pure Nothing) (.: "description"))
             <*> o .: "created_at"
             <*> o .:? "failure_reason"
+            <*> o .: "name"
 
 -- | Failure reasons that we care about.
 data JobFailureReason = JobTimeout | JobStuck | OtherReason Text
