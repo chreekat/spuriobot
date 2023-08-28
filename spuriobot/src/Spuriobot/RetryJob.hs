@@ -95,8 +95,10 @@ retryService = loop M.empty where
                     newId' <- retry_job projId jobId
                     case newId' of
                         Just newId -> do
-                            trace $ "retried as job: " <> showt newId
-                            pure (M.insert newId (retryCount + 1) retryMap)
+                            let newCount = retryCount + 1
+                                remaining = maxRetries - newCount
+                            trace $ "retried as job " <> showt newId <> ":Retries remaining = " <> showt remaining
+                            pure (M.insert newId newCount retryMap)
                         Nothing -> pure retryMap
                 else do
                     trace "exceeded max retries"
