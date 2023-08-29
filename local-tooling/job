@@ -10,5 +10,14 @@ else
 fi
 
 source ~/.bash/haskell-foundation.sh
-curl  --globoff --header "PRIVATE-TOKEN: $GIT_PRIVATE_TOKEN" "https://gitlab.haskell.org/api/v4/projects/$PRJ/jobs/$JOB" | jq . -C | less
+
+output () {
+    if [ -t 1 ]; then
+        jq . -C | less
+    else
+        cat
+    fi
+}
+
+curl  --globoff --header "PRIVATE-TOKEN: $GIT_PRIVATE_TOKEN" "https://gitlab.haskell.org/api/v4/projects/$PRJ/jobs/$JOB" | output
 
