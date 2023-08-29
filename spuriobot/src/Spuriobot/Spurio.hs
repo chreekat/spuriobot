@@ -67,13 +67,17 @@ data Check = Check
 runCheck :: Jobbo -> Check -> Maybe (FailureMessage, FailureErrorCode)
 runCheck j (Check msg cod fn) = if fn j then Just (cod, msg) else Nothing
 
-checkTimeout :: Check
+checkTimeout, checkRunnerSystem :: Check
 checkTimeout = Check "job timeout" "job_timeout" $ \(Jobbo rs _) ->
     case rs of
         Just JobTimeout -> True
         Just JobStuck -> True
-        Just (OtherReason _) -> False
-        Nothing -> False
+        _ -> False
+
+checkRunnerSystem = Check "runner failure" "runner_system" $ \(Jobbo rs _) ->
+    case rs of
+        Just RunnerSystemFailure -> True
+        _ -> False
 
 checkLogs :: [Check]
 checkLogs =
@@ -142,7 +146,7 @@ checkLogs =
 
 -- TODO tests
 collectFailures :: Jobbo -> Set Failure
-collectFailures j = S.fromList (mapMaybe (runCheck j) (checkTimeout : checkLogs))
+collectFailures j = S.fromList (mapMaybe (runCheck j) (checkTimeout : checkRunnerSystem : checkLogs))
 
 logFailures :: Set Failure -> Spuriobot ()
 logFailures failures

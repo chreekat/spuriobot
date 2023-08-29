@@ -134,13 +134,14 @@ instance FromJSON FinishedJob where
             <*> o .: "name"
 
 -- | Failure reasons that we care about.
-data JobFailureReason = JobTimeout | JobStuck | OtherReason Text
+data JobFailureReason = JobTimeout | JobStuck | RunnerSystemFailure | OtherReason Text
     deriving (Eq, Show)
 
 instance FromJSON JobFailureReason where
     parseJSON = withText "JobFailureReason" (pure . f) where
         f "job_execution_timeout" = JobTimeout
         f "stuck_or_timeout_failure" = JobStuck
+        f "runner_system_failure" = RunnerSystemFailure
         f x = OtherReason x
 
 -- | The known build statuses that we care about.

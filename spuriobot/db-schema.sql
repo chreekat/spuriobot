@@ -21,7 +21,8 @@ BEGIN
             'nix_T7273',
             'runner_process_terminated',
             'code_-11',
-            'docker'
+            'docker',
+            'runner_system'
         );
     END IF;
 END $$;

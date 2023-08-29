@@ -31,17 +31,21 @@ main = hspec $ do
         it "can read a job retry response" $ do
             eiDecoded <- eitherDecodeFileStrict' "testdata/retry-response.json" :: IO (Either String RetryResult)
             eiDecoded `shouldSatisfy` isRight
-        it "can read a FinishedJob" $ do
-            job <- eitherDecodeFileStrict' "testdata/jobinfo.json" :: IO (Either String FinishedJob)
-            let url = JobWebURI (fromJust (mkURI "https://gitlab.haskell.org/ghc/ghc/-/jobs/1593505"))
-            job `shouldBe` Right
-                (FinishedJob
-                    url
-                    (Just 142)
-                    (Just "x86-64-win-2.zw3rk.com")
-                    (read "2023-07-07 17:30:53.227")
-                    (Just (OtherReason "trace_size_exceeded"))
-                    "x86_64-windows-validate")
+        describe "Read FinishedJob" $ do
+            it "can read a FinishedJob" $ do
+                job <- eitherDecodeFileStrict' "testdata/jobinfo.json" :: IO (Either String FinishedJob)
+                let url = JobWebURI (fromJust (mkURI "https://gitlab.haskell.org/ghc/ghc/-/jobs/1593505"))
+                job `shouldBe` Right
+                    (FinishedJob
+                        url
+                        (Just 142)
+                        (Just "x86-64-win-2.zw3rk.com")
+                        (read "2023-07-07 17:30:53.227")
+                        (Just (OtherReason "trace_size_exceeded"))
+                        "x86_64-windows-validate")
+            it "can read a job that failed with RunnerSystemFailure" $ do
+                job <- eitherDecodeFileStrict' "testdata/spurio-system_failure.json" :: IO (Either String FinishedJob)
+                jobFailureReason <$> job `shouldBe` Right (Just RunnerSystemFailure)
         it "can read a Project" $ do
             job <- eitherDecodeFileStrict' "testdata/project.json" :: IO (Either String Project)
             job `shouldBe` Right (Project "ghc/ghc")
