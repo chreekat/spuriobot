@@ -142,6 +142,9 @@ checkLogs =
         -- #23144
         , Check "death by SIGQUIT" "sigquit"
             (~> "^SIGQUIT: quit")
+        -- #24274
+        , Check "stack #6388" "stack_T6388"
+            (!> "Error: [S-922]")
         ]
 
 -- TODO tests

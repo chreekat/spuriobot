@@ -22,7 +22,8 @@ BEGIN
             'runner_process_terminated',
             'code_-11',
             'docker',
-            'runner_system'
+            'runner_system',
+            'stack_T6388'
         );
     END IF;
 END $$;
