@@ -34,10 +34,10 @@ pg_ctl := $(shell pg_config --bindir)/pg_ctl
 
 # Start postgres process, put all the files in the same place, and wait for
 # startup to complete before continuting.
-# pg_ctl: -w: wait, -o: postgres options (need quotes), -l: log file path
+# pg_ctl: -o: postgres options (need quotes), -l: log file path
 # postgres: -F: no fsync, -h '': no IP/hostname connections. -k: socket dir
 pg_start := $(pg_ctl) \
-    start -w -o "-F -h '' -k $(PGHOST)" -l $(PGDATA)/logfile
+    start -o "-F -h '' -k $(PGHOST)" -l $(PGDATA)/logfile
 
 # Example usage:  $(db_exists) foo
 #
