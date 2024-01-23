@@ -1,16 +1,16 @@
 {
-  outputs = { self, nixpkgs, ... }:
+
+  inputs.nixpkgs.url = "github:nixos/nixpkgs/nixos-23.11";
+  inputs.flake-compat = {
+    url = "github:edolstra/flake-compat";
+    flake = false;
+  };
+  # flake-compat is unused in flake.nix, but is used in default.nix and
+  # shell.nix
+  outputs = { self, nixpkgs, flake-compat, ... }:
     let
       hsOverlay = pkgs: self: super: {
         myPackage = self.callCabal2nix "myPackage" ./. {};
-
-        # Need dat generated columns yo
-        direct-sqlite =
-          self.callHackageDirect {
-            pkg = "direct-sqlite";
-            ver = "2.3.27";
-            sha256 = "sha256-N8KJ2spJJEnbHGj+MsygUT+mZ4sQA6I5xQhAEMSQHHE=";
-        } {};
 
         # responseLinks
         req =
@@ -19,8 +19,8 @@
             (pkgs.fetchFromSourcehut {
               owner = "~chreekat";
               repo = "req";
-              rev = "bbe1e206d5be56238534992d5af96b9709f24f56";
-              sha256 = "sha256:0pcb850ikbvg1h42dhz376m62x3kjjxfwk034096fjm33j3v5awl";
+              rev = "2792344f417f1627871299be077719f8a0460183";
+              sha256 = "sha256-MjX8736L4a/ZxoXN4GVi4kZlGuOleniYb3sWax/5KhM=";
             })
             {});
       };
