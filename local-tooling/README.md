@@ -7,7 +7,7 @@ Tools for inspecting (GHC) GitLab job logs.
 ### Synopsis
 
 ```
-    ./result/bin/fetch-job-data [BEGIN_DATE [END_DATE]]
+    cabal run fetch-job-data [BEGIN_DATE [END_DATE]]
 ```
 
 `fetch-job-data` will fetch job logs from completed jobs.
@@ -19,13 +19,13 @@ The tool can fetch jobs from a date range. The default range is the last month.
 *Fetch all data since 1 November 2022*:
 
 ```
-./result/bin/fetch-job-data 2022-11-01T00:00:00+00:00
+cabal run fetch-job-data 2022-11-01T00:00:00+00:00
 ```
 
 *Fetch all data since last Monday*:
 
 ```
-./result/bin/fetch-job-data "$(date -Isec -d 'last Monday')"
+cabal run fetch-job-data "$(date -Isec -d 'last Monday')"
 ```
 
 ### Usage Notes
