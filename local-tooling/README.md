@@ -55,4 +55,4 @@ SQLite full-text search reference: https://www.sqlite.org/fts5.html
 
 ### How to build the tool
 
-`nix-build`
+`cabal build`
