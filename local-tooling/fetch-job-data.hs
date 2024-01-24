@@ -204,16 +204,19 @@ stageJobs key connVar dateRange projURL = do
             _ -> bracketDB "insert jobs" connVar $ \conn -> executeMany conn "insert into job values (?,?) on conflict do nothing" j
 
 initDatabase connVar = do
-    bracketDB "init database" connVar $ \conn -> execute_ conn [sql|
-        create table if not exists job (
-            job_id int primary key,
-            json text not null,
-            created_at text generated always as (json ->> '$.created_at'),
-            web_url text generated always as (json ->> '$.web_url')
-        )
-        without rowid;
-        create virtual table if not exists job_trace using fts5(trace, content='');
-    |]
+    bracketDB "init database" connVar $ \conn -> do
+        execute_ conn [sql|
+            create table if not exists job (
+                job_id int primary key,
+                json text not null,
+                created_at text generated always as (json ->> '$.created_at'),
+                web_url text generated always as (json ->> '$.web_url')
+            )
+            without rowid;
+        |]
+        execute_ conn [sql|
+            create virtual table if not exists job_trace using fts5(trace, content='');
+        |]
 
 main = do
     connVar <- newTMVarIO =<< open "jobs.db"
