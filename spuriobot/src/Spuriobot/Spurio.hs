@@ -145,6 +145,9 @@ checkLogs =
         -- #24274
         , Check "stack #6388" "stack_T6388"
             (!> "Error: [S-922]")
+        -- #24365
+        , Check "Hadrian exception: locked file" "hadrian_locked_file"
+            (!> "withFile: resource busy (file is locked)")
         ]
 
 -- TODO tests
