@@ -68,9 +68,12 @@ runCheck :: Jobbo -> Check -> Maybe (FailureMessage, FailureErrorCode)
 runCheck j (Check msg cod fn) = if fn j then Just (cod, msg) else Nothing
 
 checkTimeout, checkRunnerSystem :: Check
+
+-- | checkTimeout used to check for job timeout, but why? Most timeouts are not
+-- spurious. Now we're stuck with the name, even though it only lives on to
+-- check for stuck jobs. Hm. But I can migrate the name. TODO.
 checkTimeout = Check "job timeout" "job_timeout" $ \(Jobbo rs _) ->
     case rs of
-        Just JobTimeout -> True
         Just JobStuck -> True
         _ -> False
 
