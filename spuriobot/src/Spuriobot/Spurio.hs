@@ -122,9 +122,6 @@ checkLogs =
         -- #22408
         , Check "\"cabal exec hadrian\" segfault" "cabal_hadrian_segfault"
             (~> "Segmentation fault.*CABAL.*new-exec.*hadrian")
-        -- #22869
-        , Check "error code: -6" "code_-6"
-            (~> "Command failed with error code: -6")
         , Check "runner terminated" "runner_process_terminated"
             (!> "ERROR: Job failed (system failure): aborted: terminated")
         -- #22967
