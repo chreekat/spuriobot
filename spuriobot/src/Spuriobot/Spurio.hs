@@ -148,6 +148,9 @@ checkLogs =
         -- #24365
         , Check "Hadrian exception: locked file" "hadrian_locked_file"
             (!> "withFile: resource busy (file is locked)")
+        -- #24420
+        , Check "error code: -4" "code_-4"
+            (!> "Command failed with error code: -4")
         ]
 
 -- TODO tests
