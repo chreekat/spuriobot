@@ -94,13 +94,9 @@ checkLogs =
         --    (!> "failed to pull image \"registry.gitlab.haskell.org")
         , Check "GitLab connection failure" "connect_gitlab"
             (!> "Failed to connect to gitlab.haskell.org")
-        , Check "exhausted disk" "no_space"
-            (\j -> j !> "No space left on device"
-                -- Avoid false positives from T21336 output.
-                -- This may cause false negatives, but I think that's the lesser
-                -- of two evils.
-                && not (j !> "GHC.IO.FD.fdWrite: resource exhausted"
-                        || j !> "<stdout>: hFlush: resource exhausted"))
+        -- TODO: Disabled because of false positives. See GHC#22022.
+        -- , Check "exhausted disk" "no_space"
+        --     (!> "No space left on device")
         -- head.hackage#38
         , Check "received signal 9" "signal_9"
             (~> "failed due to signal 9 .Killed")
