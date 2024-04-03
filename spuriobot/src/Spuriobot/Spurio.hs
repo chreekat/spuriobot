@@ -147,6 +147,9 @@ checkLogs =
         -- #24420
         , Check "error code: -4" "code_-4"
             (!> "Command failed with error code: -4")
+        -- #24417
+        , Check "wasm32-wasi-ghc-pkg recache" "wasm_ghc-pkg"
+            (!> "wasm32-wasi-ghc-pkg: createProcess: exec: invalid argument (Bad file descriptor)")
         ]
 
 -- TODO tests
