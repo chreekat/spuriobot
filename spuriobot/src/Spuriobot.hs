@@ -31,7 +31,7 @@ import Data.Text.Encoding (encodeUtf8)
 import Network.Wai.Middleware.RequestLogger (logStdout)
 import Servant
 import Database.PostgreSQL.Simple (Connection)
-import Data.Pool (Pool, createPool)
+import Data.Pool (Pool, newPool, defaultPoolConfig)
 import Control.Monad (void)
 import Control.Concurrent (newChan)
 
@@ -72,7 +72,7 @@ main = do
     DB.close =<< DB.connect
 
     let fiveMin = 60 * 5
-    pool <- createPool DB.connect DB.close 4 fiveMin 1
+    pool <- newPool (defaultPoolConfig DB.connect DB.close fiveMin 1)
 
     chan <- RetryChan <$> newChan
 

@@ -3,6 +3,7 @@
     extra-substituters = [ "https://spuriobot.cachix.org" ];
     extra-trusted-public-keys = [ "spuriobot.cachix.org-1:npiBX491xE1n5qVRBBtqutI0PzJV2OeF9dCgibklr3c=" ];
   };
+  inputs.nixpkgs.url = "github:nixos/nixpkgs/nixos-23.11";
   outputs = { self, nixpkgs, ... }:
     let
       hsOverlay = pkgs: self: super: {
