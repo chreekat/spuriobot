@@ -24,11 +24,10 @@ import System.Environment (
     getEnv,
  )
 import Control.Concurrent.Async (race_)
-import Control.Concurrent.Classy (fork)
+import Control.Concurrent.Classy (fork, getNumCapabilities)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding (encodeUtf8)
-import GHC.Conc (numCapabilities)
 import Network.Wai.Middleware.RequestLogger (logStdout)
 import Servant
 import Database.PostgreSQL.Simple (Connection)
@@ -74,7 +73,7 @@ main = do
 
     let fiveMin = 60 * 5
     -- See https://github.com/scrive/pool/issues/31#issuecomment-2043213626
-    let reasonableDefault = GHC.Conc.numCapabilities
+    reasonableDefault <- getNumCapabilities
     pool <- newPool (defaultPoolConfig DB.connect DB.close fiveMin reasonableDefault)
 
     chan <- RetryChan <$> newChan
