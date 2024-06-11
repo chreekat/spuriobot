@@ -3,7 +3,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 
 -- | Module for all db queries. 
-module Spuriobot.DB (connect, Database.PostgreSQL.Simple.close, insertFailures, Failure(..)) where
+module Spuriobot.DB (connect, Database.PostgreSQL.Simple.close, insertFailures, Failure(..), insertJobs, Job(..)) where
 
 import GHC.Generics
 import Data.Foldable (toList)
@@ -29,6 +29,21 @@ insertFailures :: Foldable f => f Failure -> DB Int64
 insertFailures x conn = executeMany conn
     [sql|
         insert into ci_failure (job_id, type, job_date, web_url, runner_id, runner_name, job_name, project_path)
+        values (?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict do nothing
+        |]
+    (toList x)
+
+type JobType = Text
+
+data Job = Job Int64 JobType UTCTime Text (Maybe Int64) (Maybe Text) Text Text
+    deriving (Eq, Show, Generic, ToRow)
+
+-- | Insert a batch of jobs.
+insertJobs :: Foldable f => f Job -> DB Int64
+insertJobs x conn = executeMany conn
+    [sql|
+        insert into ci_job (job_id, type, job_date, web_url, runner_id, runner_name, job_name, project_path)
         values (?, ?, ?, ?, ?, ?, ?, ?)
         on conflict do nothing
         |]

@@ -31,7 +31,7 @@ import Data.Text.Encoding (encodeUtf8)
 import Network.Wai.Middleware.RequestLogger (logStdout)
 import Servant
 import Database.PostgreSQL.Simple (Connection)
-import Data.Pool (Pool, newPool, defaultPoolConfig)
+import Data.Pool (Pool, newPool, defaultPoolConfig, withResource)
 import Control.Monad (void)
 import Control.Concurrent (newChan)
 
@@ -114,6 +114,8 @@ processBuildEvent ev = do
 
 processFinishedJob :: GitLabBuildEvent -> Spuriobot ()
 processFinishedJob ev = do
+    processJobs ev
+    -- Handle specific job statuses
     case glbBuildStatus ev of
         OtherBuildStatus x -> trace x
         Failed -> withTrace "failed" $ processFailure ev

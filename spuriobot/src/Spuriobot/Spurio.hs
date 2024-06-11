@@ -13,6 +13,7 @@ module Spuriobot.Spurio (
     Jobbo(..),
     logFailures,
     processFailure,
+    processJobs,
 ) where
 
 import Control.Monad.Catch (Exception)
@@ -28,6 +29,7 @@ import Data.Int (Int64)
 import Control.Monad
 import Control.Exception (throwIO)
 import Text.URI (render)
+import qualified Data.Time.Clock as Time
 
 import GitLabApi
 import Spuriobot.Foundation
@@ -189,6 +191,49 @@ processFailure GitLabBuildEvent { glbProjectId, glbBuildId } = do
     void $ runDB $ DB.insertFailures (mkDBFailures glbBuildId jobInfo projInfo (S.toList failures))
     unless (S.null failures) $
         withTrace "retrying" $ retryJob glbProjectId glbBuildId
+
+-- Convert GitLabTime to UTCTime
+gitLabTimeToUTC :: GitLabTime -> Time.UTCTime
+gitLabTimeToUTC (GitLabTime t) = t
+
+uriToText :: JobWebURI -> Text
+uriToText (JobWebURI uri) = T.pack (show uri)
+
+processJobs :: GitLabBuildEvent -> Spuriobot ()
+processJobs ev = do
+    tok <- asks apiToken
+    let projectId = glbProjectId ev
+        jobId = glbBuildId ev
+    jobInfo <- liftIO $ fetchFinishedJob tok projectId jobId
+    projInfo <- liftIO $ fetchProject tok projectId
+    logs <- do
+        l <- liftIO $ fetchJobLogs tok (webUrl jobInfo)
+        case l of
+            Left (JobWebUrlParseFailure url) -> do
+                trace $ "error: could not parse URL: " <> render url
+                liftIO $ throwIO ParseUrlFail
+            Right logs -> pure logs
+    let job = DB.Job
+            jobId
+            (T.pack . show $ glbBuildStatus ev)  -- Convert BuildStatus to Text
+            (maybe (Time.UTCTime undefined 0) gitLabTimeToUTC (glbFinishedAt ev)) -- Use glbFinishedAt from ev
+            (uriToText $ webUrl jobInfo)  -- Convert JobWebURI to Text
+            (runnerId jobInfo)
+            (runnerName jobInfo)
+            (jobName jobInfo)
+            (projPath projInfo) 
+
+    -- logJob job
+    void $ runDB $ DB.insertJobs [job] 
+
+    unless (glbBuildStatus ev == Failed || isJobFailureReasonEmpty jobInfo) $
+        withTrace "retrying" $ retryJob projectId jobId
+
+
+isJobFailureReasonEmpty :: FinishedJob -> Bool
+isJobFailureReasonEmpty jobInfo = case jobFailureReason jobInfo of
+    Just _ -> False
+    Nothing -> True
 
 -- | Map between our types and the DB's types
 mkDBFailures :: Functor f => Int64 -> FinishedJob -> Project -> f Failure -> f DB.Failure
