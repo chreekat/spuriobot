@@ -45,6 +45,12 @@ import Control.Monad.Catch (finally)
 import Control.Monad.Trans (liftIO)
 import Control.Monad.Reader (asks)
 
+
+import System.Environment (getArgs)
+import Data.Time (UTCTime, getCurrentTime, addUTCTime, nominalDay, parseTimeM, defaultTimeLocale)
+import Control.Exception (SomeException, handle)
+import GitLabJobs (fetchJobsBetweenDates)
+
 -- | API served by this app
 type WebHookAPI =
     "spuriobot" :> ReqBody '[JSON] GitLabBuildEvent :> Post '[JSON] ()
@@ -60,27 +66,46 @@ main = do
     -- Ensure journald gets our output
     hSetBuffering stdout NoBuffering
 
+    -- args <- getArgs
+    -- case args of
+    --     [] -> pure ()
+    --     (_:_) -> error "Usage: spuriobot"
+
     args <- getArgs
     case args of
-        [] -> pure ()
-        (_:_) -> error "Usage: spuriobot"
+        ["fetchjobs", startStr, endStr] -> handle dateException $ do
+            let startDate = parseTimeM True defaultTimeLocale "%Y-%m-%d" startStr :: Maybe UTCTime
+            let endDate = parseTimeM True defaultTimeLocale "%Y-%m-%d" endStr :: Maybe UTCTime
+            case (startDate, endDate) of
+                (Just start, Just end) -> fetchJobsBetweenDates (start, end)
+                _ -> putStrLn "Invalid date format. Please use YYYY-MM-DD."
+        ["fetchjobs"] -> do
+            now <- getCurrentTime
+            let lastMonth = addUTCTime (-30 * nominalDay) now
+            fetchJobsBetweenDates (lastMonth, now)
+        -- _ -> putStrLn "Usage: cabal run fetchjobs [start-date end-date]"
+        _ -> do
+            strApiToken <- GitLabToken . encodeUtf8 . T.pack <$> getEnv "GITLAB_API_TOKEN"
 
-    strApiToken <- GitLabToken . encodeUtf8 . T.pack <$> getEnv "GITLAB_API_TOKEN"
+            -- Die early if no DB connection. (Laziness in createPool bites us
+            -- otherwise.)
+            DB.close =<< DB.connect
 
-    -- Die early if no DB connection. (Laziness in createPool bites us
-    -- otherwise.)
-    DB.close =<< DB.connect
+            let fiveMin = 60 * 5
+            -- See https://github.com/scrive/pool/issues/31#issuecomment-2043213626
+            reasonableDefault <- getNumCapabilities
+            pool <- newPool (defaultPoolConfig DB.connect DB.close fiveMin reasonableDefault)
 
-    let fiveMin = 60 * 5
-    -- See https://github.com/scrive/pool/issues/31#issuecomment-2043213626
-    reasonableDefault <- getNumCapabilities
-    pool <- newPool (defaultPoolConfig DB.connect DB.close fiveMin reasonableDefault)
+            chan <- RetryChan <$> newChan
 
-    chan <- RetryChan <$> newChan
+            race_
+                (runSpuriobot strApiToken pool chan retryService)
+                (run 8080 $ logStdout $ serve webhookAPI (mainServer strApiToken pool chan))
+    where
+        dateException :: SomeException -> IO ()
+        dateException e = putStrLn $ "Error parsing dates: " ++ show e
 
-    race_
-        (runSpuriobot strApiToken pool chan retryService)
-        (run 8080 $ logStdout $ serve webhookAPI (mainServer strApiToken pool chan))
+    
 
 spurioServer :: ServerT WebHookAPI Spuriobot
 spurioServer = jobEvent :<|> systemEvent :<|> jobEvent

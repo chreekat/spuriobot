@@ -1,9 +1,5 @@
 cabal-version: 3.0
 
--- This file has been generated from package.yaml by hpack version 0.35.0.
---
--- see: https://github.com/sol/hpack
-
 name:           spuriobot
 version:        0.1.0.0
 description:    Collect and report spurious CI failures by category
@@ -25,6 +21,8 @@ library
       Spuriobot.RetryJob
       Spuriobot.Spurio
       GitLabApi
+      GitLabJobs
+
   other-modules:
       Paths_spuriobot
   hs-source-dirs:
@@ -33,7 +31,7 @@ library
       OverloadedStrings
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
   build-depends:
-      aeson
+      aeson >= 1.5
     , async
     , attoparsec
     , attoparsec-iso8601
@@ -58,6 +56,11 @@ library
     , wai
     , wai-extra
     , warp
+    , unordered-containers
+    , vector
+    , http-types
+    , network-uri
+    , http-client-tls
   default-language: Haskell2010
 
 executable spuriobot
@@ -69,6 +72,7 @@ executable spuriobot
   build-depends:
     , base >=4.7 && <5
     , spuriobot
+    , time >= 1.12.2
   default-language: Haskell2010
 
 test-suite spuriobot-test
