@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeOperators #-}
-
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {- |
 Module: Spuriobot
 Description: Log spurious GHC GitLab build failures
@@ -17,6 +18,7 @@ module Spuriobot (
     main,
 ) where
 
+import Control.Monad.Catch (Exception)
 import Network.Wai.Handler.Warp (run)
 import System.IO (hSetBuffering, stdout, BufferMode(..))
 import System.Environment (
@@ -34,6 +36,10 @@ import Database.PostgreSQL.Simple (Connection)
 import Data.Pool (Pool, newPool, defaultPoolConfig, withResource)
 import Control.Monad (void)
 import Control.Concurrent (newChan)
+import Control.Concurrent.STM (newTMVarIO, TMVar)
+import qualified Control.Concurrent.STM as STM
+import Database.SQLite.Simple (open, Connection)
+import qualified Database.SQLite.Simple as SQLite
 
 
 import qualified Spuriobot.DB as DB
@@ -48,8 +54,9 @@ import Control.Monad.Reader (asks)
 
 import System.Environment (getArgs)
 import Data.Time (UTCTime, getCurrentTime, addUTCTime, nominalDay, parseTimeM, defaultTimeLocale)
-import Control.Exception (SomeException, handle)
-import GitLabJobs (fetchJobsBetweenDates)
+import Control.Exception (SomeException, handle, throwIO)
+import GitLabJobs (fetchJobsBetweenDates, initDatabase)
+import Text.URI (URI,render)
 
 -- | API served by this app
 type WebHookAPI =
@@ -90,6 +97,8 @@ main = do
             -- Die early if no DB connection. (Laziness in createPool bites us
             -- otherwise.)
             DB.close =<< DB.connect
+            connVar <- newTMVarIO =<< SQLite.open "jobs.db"
+            initDatabase connVar
 
             let fiveMin = 60 * 5
             -- See https://github.com/scrive/pool/issues/31#issuecomment-2043213626
@@ -99,8 +108,8 @@ main = do
             chan <- RetryChan <$> newChan
 
             race_
-                (runSpuriobot strApiToken pool chan retryService)
-                (run 8080 $ logStdout $ serve webhookAPI (mainServer strApiToken pool chan))
+                (runSpuriobot strApiToken pool chan connVar retryService)
+                (run 8080 $ logStdout $ serve webhookAPI (mainServer strApiToken pool chan connVar))
     where
         dateException :: SomeException -> IO ()
         dateException e = putStrLn $ "Error parsing dates: " ++ show e
@@ -113,8 +122,13 @@ spurioServer = jobEvent :<|> systemEvent :<|> jobEvent
         jobEvent = mkHook (showt . glbBuildId) processBuildEvent
         systemEvent = mkHook (const "system") processSystemEvent
 
-mainServer :: GitLabToken -> Pool Connection -> RetryChan -> Server WebHookAPI
-mainServer tok pool chan = hoistServer webhookAPI (runSpuriobot tok pool chan) spurioServer
+-- mainServer :: GitLabToken -> Pool Database.PostgreSQL.Simple.Connection -> RetryChan -> TMVar SQLite.Connection -> Server WebHookAPI
+-- mainServer tok pool chan = hoistServer webhookAPI (runSpuriobot tok pool chan connVar) spurioServer
+mainServer :: GitLabToken -> Pool Database.PostgreSQL.Simple.Connection -> RetryChan -> TMVar SQLite.Connection -> Server WebHookAPI
+mainServer tok pool chan connVar = hoistServer webhookAPI (nt tok pool chan connVar) spurioServer
+  where
+    nt :: GitLabToken -> Pool Database.PostgreSQL.Simple.Connection -> RetryChan -> TMVar SQLite.Connection -> Spuriobot a -> Handler a
+    nt tok pool chan connVar action = liftIO $ runSpuriobot tok pool chan connVar action
 
 -- | This turns the a request processor into a webhook endpoint by immediately
 -- forking to do the real work.
@@ -137,13 +151,40 @@ processBuildEvent ev = do
         -- FIXME explain use of clearRetry here.
         Just _ -> withTrace "finished" $ processFinishedJob ev `finally` clearRetry (glbBuildId ev)
 
+-- processFinishedJob :: GitLabBuildEvent -> Spuriobot ()
+-- processFinishedJob ev = do
+--     insertLogtoFTS ev
+--     -- Handle specific job statuses
+--     case glbBuildStatus ev of
+--         OtherBuildStatus x -> trace x
+--         Failed -> withTrace "failed" $ processFailure ev
+
+
+data SpuriobotException = ParseUrlFail
+    deriving stock (Eq, Show)
+    deriving anyclass (Exception)
+
 processFinishedJob :: GitLabBuildEvent -> Spuriobot ()
 processFinishedJob ev = do
-    processJobs ev
+    logs <- fetchLogsForEvent ev
+    insertLogtoFTS ev logs
     -- Handle specific job statuses
     case glbBuildStatus ev of
         OtherBuildStatus x -> trace x
-        Failed -> withTrace "failed" $ processFailure ev
+        Failed -> withTrace "failed" $ processFailure ev logs
+
+fetchLogsForEvent :: GitLabBuildEvent -> Spuriobot Text
+fetchLogsForEvent ev = do
+    tok <- asks apiToken
+    let projectId = glbProjectId ev
+        jobId = glbBuildId ev
+    jobInfo <- liftIO $ fetchFinishedJob tok projectId jobId
+    l <- liftIO $ fetchJobLogs tok (webUrl jobInfo)
+    case l of
+        Left (JobWebUrlParseFailure url) -> do
+            trace $ "error: could not parse URL: " <> render url
+            liftIO $ throwIO ParseUrlFail
+        Right logs -> pure logs
 
 -- | Top-level handler for GitLab system events
 -- https://gitlab.haskell.org/help/administration/system_hooks

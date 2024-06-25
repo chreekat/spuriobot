@@ -4,11 +4,12 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE QuasiQuotes #-}
-{-# LANGUAGE DeriveGeneric #-}
 
 module GitLabJobs (
     fetchJobsBetweenDates,
-    initDatabase
+    initDatabase,
+    bracketDB,
+    Trace(..)
 ) where
 
 import Control.Applicative
@@ -49,76 +50,59 @@ import Network.HTTP.Req
       responseLinks,
       runReq,
       useHttpsURI,
+      https,
+      (/~),
+      headerRedacted,
       GET(GET),
       NoReqBody(NoReqBody) )
-
+import qualified Data.ByteString.Lazy.Char8 as LBS
+import Data.Aeson.Types (FromJSON, parseEither)
 
 
 data Project = Project { name :: String, projectId :: Int } deriving (Eq, Show)
 
--- | List of projects we care about.
 projects :: [Project]
 projects =
     [ Project "ghc/ghc" 1
-    -- For debugging
-    -- , Project "ghc/head.hackage" 78
-    -- , Project "ghc/ghc-debug" 798
-    -- , Project "haskell/haskell-language-server" 1180
-    -- , Project "ghc/ci-images" 149
     ]
 
--- | Additional data types
-data GlbProject = GlbProject
-    { glbProjectId :: Maybe Int
-    } deriving (Eq, Show, Generic)
-
-instance FromJSON GlbProject where
-    parseJSON = withObject "GlbProject" $ \v -> GlbProject
-        <$> v .:? "project_id"
-
-data Runner = Runner
-    { runnerId :: Int
-    , runnerName :: Text
-    } deriving (Eq, Show, Generic)
-
-instance FromJSON Runner where
-    parseJSON = withObject "Runner" $ \v -> Runner
-        <$> v .: "id"
-        <*> v .: "name"
-
--- | The elements of a GitLab REST API Job entity we care about
 data Job = Job
-    { jobId :: Int
-    , jobBlob :: Text
-    , createdAt :: UTCTime
-    , webUrl :: Text
-    , runner :: Maybe Runner         -- New field
-    , jobName :: Maybe Text          -- New field
-    , glbProject :: Maybe GlbProject 
+    { jobId        :: Int
+    , createdAt    :: UTCTime
+    , webUrl       :: Text
+    , runnerId     :: Maybe Int
+    , runnerName   :: Maybe Text
+    , jobName      :: Maybe Text
+    , glbProjectId :: Maybe Int
     } deriving (Eq, Show)
 
--- Highlighted Changes in the ToRow instance
 instance ToRow Job where
-    toRow (Job j blob _ _ _ _ _) = toRow (j, blob)
+    toRow (Job jobId createdAt webUrl runnerId runnerName jobName glbProjectId) =
+        toRow (jobId, createdAt, webUrl, runnerId, runnerName, jobName, glbProjectId)
 
--- Highlighted Changes in the FromRow instance
 instance FromRow Job where
-    fromRow = Job <$> field <*> field <*> field <*> field <*> pure Nothing <*> pure Nothing <*> pure Nothing
+    fromRow = Job <$> field <*> field <*> field <*> field <*> field <*> field <*> field
 
-v .:: key = \subkey -> do
-    subobj <- v .: fromString key
-    withObject key (.: subkey) subobj
-
--- Highlighted Changes in the FromJSON instance
 instance FromJSON Job where
-    parseJSON = withObject "Job" $ \v -> Job
-        <$> v .: "id"
-        <*> pure (T.decodeUtf8 (toStrict (encode v)))
-        <*> v .: "created_at"
-        <*> v .: "web_url"
-        <*> v .:? "runner"
-        <*> v .:? "name"
-        <*> v .:? "pipeline"
+    parseJSON = withObject "Job" $ \v -> do
+        jobId <- v .: "id"
+        createdAt <- v .: "created_at"
+        webUrl <- v .: "web_url"
+        runner <- v .:? "runner"
+        runnerId <- traverse (.: "id") runner
+        runnerName <- traverse (.: "name") runner
+        jobName <- v .:? "name"
+        pipeline <- v .:? "pipeline"
+        glbProjectId <- traverse (.: "project_id") pipeline
+        return Job
+            { jobId = jobId
+            , createdAt = createdAt
+            , webUrl = webUrl
+            , runnerId = runnerId
+            , runnerName = runnerName
+            , jobName = jobName
+            , glbProjectId = glbProjectId
+            }
 
 jobsAPI :: Project -> Maybe Int -> URI
 jobsAPI (projectId -> i) page = fromJust $ mkURI $
@@ -133,13 +117,10 @@ data JobsResult
     | TooYoung URI
     deriving (Eq, Show)
 
--- | A quick and partial action that adds a PRIVATE-TOKEN header with the key
 api uri key =
     let Just (u, o) = useHttpsURI uri
     in reqq GET u NoReqBody jsonResponse (o <> header "PRIVATE-TOKEN" key)
 
--- | Get a list of jobs in a single query. Includes info about whether we should
--- continue.
 fetchJobs key (minDate, maxDate) jobUrl connVar = do
     resp <- api jobUrl key
 
@@ -147,7 +128,6 @@ fetchJobs key (minDate, maxDate) jobUrl connVar = do
     let jobs = responseBody resp
 
     let (msg, res) = f jobs nextLink
-        -- Check if we're still in the age range
         tooYoung j = createdAt j > maxDate
         tooOld j = createdAt j < minDate
         f jobs link | all tooYoung jobs = ("Too young", TooYoung link)
@@ -156,7 +136,6 @@ fetchJobs key (minDate, maxDate) jobUrl connVar = do
     logg msg
     pure res
 
--- | Get all jobs within a given age range.
 getJobs
     :: BS.ByteString
     -> (UTCTime, UTCTime)
@@ -182,10 +161,8 @@ instance ToJSON Trace where
 instance ToRow Trace where
     toRow (Trace j l) = toRow (j, l)
 
--- | The simple api we all we wished for
 reqq method url body resp opts = liftIO $ runReq defaultHttpConfig (req method url body resp opts)
 
--- | Get the trace for a job
 getTrace key j = do
     logg $ "GET TRACE " <> bstr (show (jobId j))
     let Just (u,o) = useHttpsURI =<< mkURI (webUrl j)
@@ -201,7 +178,7 @@ bstr = T.encodeUtf8 . T.pack
 insertJob key connVar job = do
     t <- getTrace key job
     bracketDB "insert trace" connVar $ \conn ->
-        execute conn "insert into job_trace (rowid, trace) values (?, ?)" t
+        execute conn "insert into job_trace (rowid, trace) values (?, ?) on conflict do nothing" t
 
 logg :: MonadIO m => BS.ByteString -> m ()
 logg = liftIO . BS.hPutStrLn stderr
@@ -211,12 +188,38 @@ bracketDB msg v
     = liftIO
     . bracket (do c <- atomically (takeTMVar v); logg ("OPEN " <> msg); pure c) (\c -> logg ("CLOSE " <> msg) >> atomically (putTMVar v c))
 
+newtype GitLabToken = GitLabToken BS.ByteString
+
+data ProjectInfo = ProjectInfo
+    { project_path :: T.Text
+    } deriving (Eq, Show)
+
+instance FromJSON ProjectInfo where
+    parseJSON = withObject "ProjectInfo" $ \v -> ProjectInfo
+        <$> v .: "path"
+
+fetchProject :: GitLabToken -> Int -> IO ProjectInfo
+fetchProject (GitLabToken tok) projectId = do
+    resp <- runReq defaultHttpConfig $ do
+        req GET
+            (https "gitlab.haskell.org" /: "api" /: "v4" /: "projects" /~ projectId)
+            NoReqBody
+            jsonResponse
+            (header "PRIVATE-TOKEN" tok)
+    case parseEither parseJSON (responseBody resp) of
+        Left err -> error $ "Failed to decode project JSON: " ++ show err
+        Right proj -> return proj
+
+instance ToRow JobWithProjectPath where
+    toRow (JobWithProjectPath jobId createdAt webUrl runnerId runnerName jobName projectPath) =
+        toRow (jobId, createdAt, webUrl, runnerId, runnerName, jobName, projectPath)
+
 -- | Concurrently insert all staged jobs.
 clearStagedJobs key connVar = do
     logg "Clearing staged jobs"
     jobs <- bracketDB "jobs with no traces" connVar
         $ \conn -> query_ conn [sql|
-            select j.job_id, j.json, j.created_at, j.web_url
+            select j.job_id, j.job_date, j.web_url, j.runner_id, j.runner_name, j.job_name, j.project_path
             from job j
             left join job_trace t
             on j.job_id = t.rowid
@@ -225,6 +228,16 @@ clearStagedJobs key connVar = do
     logg ("CLEAR " <> bstr (show (length jobs)) <> " JOBS")
     void $ parMapM (insertJob key connVar) jobs
 
+data JobWithProjectPath = JobWithProjectPath
+    { jobIdjwpp        :: Int
+    , createdAtjwpp    :: UTCTime
+    , webUrljwpp       :: Text
+    , runnerIdjwpp     :: Maybe Int
+    , runnerNamejwpp   :: Maybe Text
+    , jobNamejwpp      :: Maybe Text
+    , project_pathjwpp :: Text
+    } deriving (Eq, Show)
+
 -- | Fetch jobs and dump them in the job table
 stageJobs key connVar dateRange projURL = do
     logg "Staging jobs"
@@ -232,7 +245,20 @@ stageJobs key connVar dateRange projURL = do
         j <- getJobs key dateRange projURL connVar
         case j of
             [] -> pure ()
-            _ -> bracketDB "insert jobs" connVar $ \conn -> executeMany conn "insert into job values (?,?) on conflict do nothing" j
+            jobs -> do
+                forM_ jobs $ \job -> do
+                    projectInfo <- liftIO $ fetchProject (GitLabToken key) (fromMaybe 0 (glbProjectId job))
+                    let jobWithProjectPath = JobWithProjectPath
+                                { jobIdjwpp = jobId job
+                                , createdAtjwpp = createdAt job
+                                , webUrljwpp = webUrl job
+                                , runnerIdjwpp = runnerId job
+                                , runnerNamejwpp = runnerName job
+                                , jobNamejwpp = jobName job
+                                , project_pathjwpp = project_path projectInfo
+                                }
+                    bracketDB "insert jobs" connVar $ \conn ->
+                        execute conn "insert or ignore into job (job_id, job_date, web_url, runner_id, runner_name, job_name, project_path) values (?,?,?,?,?,?,?)" jobWithProjectPath
 
 -- | Initialize the database
 
@@ -241,9 +267,12 @@ initDatabase connVar = do
         execute_ conn [sql|
             create table if not exists job (
                 job_id int primary key,
-                json text not null,
-                created_at text generated always as (json ->> '$.created_at'),
-                web_url text generated always as (json ->> '$.web_url')
+                job_date text,
+                web_url text,
+                runner_id int,
+                runner_name text,
+                job_name text,
+                project_path text
             )
             without rowid;
         |]

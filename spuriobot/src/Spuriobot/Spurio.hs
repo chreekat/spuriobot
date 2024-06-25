@@ -2,7 +2,6 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE NamedFieldPuns #-}
 -- Used for MonadConc:
 {-# LANGUAGE UndecidableInstances #-}
@@ -13,7 +12,7 @@ module Spuriobot.Spurio (
     Jobbo(..),
     logFailures,
     processFailure,
-    processJobs,
+    insertLogtoFTS,
 ) where
 
 import Control.Monad.Catch (Exception)
@@ -35,6 +34,7 @@ import GitLabApi
 import Spuriobot.Foundation
 import Spuriobot.RetryJob
 import qualified Spuriobot.DB as DB
+import GitLabJobs (Trace(..))
 
 --
 -- Helpers
@@ -48,9 +48,9 @@ import qualified Spuriobot.DB as DB
 -- Controller logic
 --
 
-data SpuriobotException = ParseUrlFail
-    deriving stock (Eq, Show)
-    deriving anyclass Exception
+-- data SpuriobotException = ParseUrlFail
+--     deriving stock (Eq, Show)
+--     deriving anyclass Exception
 
 -- the code that we inject into the database
 type FailureErrorCode = Text
@@ -169,22 +169,11 @@ logFailures failures
 -- | Characteristics of a job that we test against.
 data Jobbo = Jobbo (Maybe JobFailureReason) Text
 
--- | Given a failed job, deal with spurios (if any)
-processFailure :: GitLabBuildEvent -> Spuriobot ()
-processFailure GitLabBuildEvent { glbProjectId, glbBuildId } = do
+processFailure :: GitLabBuildEvent -> Text -> Spuriobot ()
+processFailure GitLabBuildEvent { glbProjectId, glbBuildId } logs = do
     tok <- asks apiToken
     jobInfo <- liftIO $ fetchFinishedJob tok glbProjectId glbBuildId
     projInfo <- liftIO $ fetchProject tok glbProjectId
-    logs <- do
-        l <- liftIO $ fetchJobLogs tok (webUrl jobInfo)
-        case l of
-            -- this error will only terminate the forked processFailure thread,
-            -- so the main process should keep listening and handling requests.
-            -- FIXME: use throwError in the Handler monad
-            Left (JobWebUrlParseFailure url) -> do
-                trace $ "error: could not parse URL: " <> render url
-                liftIO $ throwIO ParseUrlFail
-            Right logs -> pure logs
     let jobbo = Jobbo (jobFailureReason jobInfo) logs
     let failures = collectFailures jobbo
     logFailures failures
@@ -199,20 +188,13 @@ gitLabTimeToUTC (GitLabTime t) = t
 uriToText :: JobWebURI -> Text
 uriToText (JobWebURI uri) = T.pack (show uri)
 
-processJobs :: GitLabBuildEvent -> Spuriobot ()
-processJobs ev = do
+insertLogtoFTS :: GitLabBuildEvent -> Text -> Spuriobot ()
+insertLogtoFTS ev logs = do
     tok <- asks apiToken
     let projectId = glbProjectId ev
         jobId = glbBuildId ev
     jobInfo <- liftIO $ fetchFinishedJob tok projectId jobId
     projInfo <- liftIO $ fetchProject tok projectId
-    logs <- do
-        l <- liftIO $ fetchJobLogs tok (webUrl jobInfo)
-        case l of
-            Left (JobWebUrlParseFailure url) -> do
-                trace $ "error: could not parse URL: " <> render url
-                liftIO $ throwIO ParseUrlFail
-            Right logs -> pure logs
     let job = DB.Job
             jobId
             (T.pack . show $ glbBuildStatus ev)  -- Convert BuildStatus to Text
@@ -224,11 +206,11 @@ processJobs ev = do
             (projPath projInfo) 
 
     -- logJob job
-    void $ runDB $ DB.insertJobs [job] 
-
-    unless (glbBuildStatus ev == Failed || isJobFailureReasonEmpty jobInfo) $
-        withTrace "retrying" $ retryJob projectId jobId
-
+    -- void $ runDB $ DB.insertJobs [job] 
+    sqliteconnVar <- asks connVar
+    liftIO $ DB.insertJobs [job] sqliteconnVar
+    let jobTrace = Trace jobId logs
+    liftIO $ insertJobTrace [jobTrace] sqliteconnVar
 
 isJobFailureReasonEmpty :: FinishedJob -> Bool
 isJobFailureReasonEmpty jobInfo = case jobFailureReason jobInfo of
