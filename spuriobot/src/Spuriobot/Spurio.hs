@@ -161,10 +161,10 @@ collectFailures j = S.fromList (mapMaybe (runCheck j) (checkTimeout : checkRunne
 
 logFailures :: Set Failure -> Spuriobot ()
 logFailures failures
-    | S.null failures = trace "no known spurio"
+    | S.null failures = Spuriobot.Foundation.trace "no known spurio"
     | otherwise = forM_
         (S.toList failures)
-        ( \(_, msg) -> trace msg)
+        ( \(_, msg) -> Spuriobot.Foundation.trace msg)
 
 -- | Characteristics of a job that we test against.
 data Jobbo = Jobbo (Maybe JobFailureReason) Text
@@ -210,7 +210,7 @@ insertLogtoFTS ev logs = do
     sqliteconnVar <- asks connVar
     liftIO $ DB.insertJobs [job] sqliteconnVar
     let jobTrace = Trace jobId logs
-    liftIO $ insertJobTrace [jobTrace] sqliteconnVar
+    liftIO $ DB.insertJobTrace [jobTrace] sqliteconnVar
 
 isJobFailureReasonEmpty :: FinishedJob -> Bool
 isJobFailureReasonEmpty jobInfo = case jobFailureReason jobInfo of

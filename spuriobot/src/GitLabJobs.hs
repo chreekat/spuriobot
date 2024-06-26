@@ -12,6 +12,7 @@ module GitLabJobs (
     Trace(..)
 ) where
 
+import Data.Int (Int64)
 import Control.Applicative
 import Control.Concurrent.STM
 import Control.Exception
@@ -67,7 +68,7 @@ projects =
     ]
 
 data Job = Job
-    { jobId        :: Int
+    { jobId        :: Int64
     , createdAt    :: UTCTime
     , webUrl       :: Text
     , runnerId     :: Maybe Int
@@ -151,7 +152,7 @@ getJobs key dateRange jobUrl connVar = do
         TooYoung nextUrl -> getJobs key dateRange nextUrl connVar
 
 data Trace = Trace
-    { tid :: Int
+    { tid :: Int64
     , trace :: Text
     } deriving (Eq, Show)
 
@@ -164,11 +165,11 @@ instance ToRow Trace where
 reqq method url body resp opts = liftIO $ runReq defaultHttpConfig (req method url body resp opts)
 
 getTrace key j = do
-    logg $ "GET TRACE " <> bstr (show (jobId j))
-    let Just (u,o) = useHttpsURI =<< mkURI (webUrl j)
+    logg $ "GET TRACE " <> bstr (show (jobIdjwpp j))
+    let Just (u,o) = useHttpsURI =<< mkURI (webUrljwpp j)
     resp <- reqq GET (u /: "raw") NoReqBody bsResponse (o <> header "PRIVATE-TOKEN" key)
     pure $ Trace
-        (jobId j)
+        (jobIdjwpp j)
         (T.decodeUtf8 $ responseBody resp)
 
 bstr = T.encodeUtf8 . T.pack
@@ -178,7 +179,7 @@ bstr = T.encodeUtf8 . T.pack
 insertJob key connVar job = do
     t <- getTrace key job
     bracketDB "insert trace" connVar $ \conn ->
-        execute conn "insert into job_trace (rowid, trace) values (?, ?) on conflict do nothing" t
+        execute conn "insert into job_trace (rowid, trace) values (?, ?)" t
 
 logg :: MonadIO m => BS.ByteString -> m ()
 logg = liftIO . BS.hPutStrLn stderr
@@ -214,6 +215,9 @@ instance ToRow JobWithProjectPath where
     toRow (JobWithProjectPath jobId createdAt webUrl runnerId runnerName jobName projectPath) =
         toRow (jobId, createdAt, webUrl, runnerId, runnerName, jobName, projectPath)
 
+instance FromRow JobWithProjectPath where
+    fromRow = JobWithProjectPath <$> field <*> field <*> field <*> field <*> field <*> field <*> field
+    
 -- | Concurrently insert all staged jobs.
 clearStagedJobs key connVar = do
     logg "Clearing staged jobs"
@@ -229,7 +233,7 @@ clearStagedJobs key connVar = do
     void $ parMapM (insertJob key connVar) jobs
 
 data JobWithProjectPath = JobWithProjectPath
-    { jobIdjwpp        :: Int
+    { jobIdjwpp        :: Int64
     , createdAtjwpp    :: UTCTime
     , webUrljwpp       :: Text
     , runnerIdjwpp     :: Maybe Int

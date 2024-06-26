@@ -10,6 +10,7 @@ module Spuriobot.DB (
     Failure(..),
     connectSQLite, -- Exported the SQLite connection function
     insertJobs,
+    insertJobTrace,
     Job(..)
 ) where
 
@@ -27,7 +28,7 @@ import Control.Exception (bracket)
 import Control.Concurrent.STM (TMVar)
 import Control.Monad.IO.Class (liftIO)
 
-import GitLabJobs (bracketDB,Trace)
+import GitLabJobs (bracketDB,Trace(..))
 
 type FailType = Text
 
@@ -68,6 +69,6 @@ insertJobs x connVar = do
 
 insertJobTrace :: Foldable f => f Trace -> TMVar SQLite.Connection -> IO ()
 insertJobTrace traces connVar = do
-    let tracesToInsert = map (\(JobTrace a b) -> (a, b)) (toList traces)
+    let tracesToInsert = map (\(Trace a b) -> (a, b)) (toList traces)
     bracketDB "insert job traces" connVar $ \conn ->
         SQLite.executeMany conn "insert into job_trace (job_id, logs) values (?,?)" tracesToInsert
