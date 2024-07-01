@@ -4,48 +4,44 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE DeriveAnyClass #-}
 
 module GitLabJobs (
     fetchJobsBetweenDates,
     initDatabase,
     bracketDB,
-    Trace(..)
+    Trace(..),
+    JobWithProjectPath(..)
 ) where
 
 import Data.Int (Int64)
-import Control.Applicative
+import GHC.Generics
 import Control.Concurrent.STM
 import Control.Exception
 import Control.Monad
 import Control.Monad.Par.IO
 import Control.Monad.Par.Combinator
 import Data.Aeson
-import Data.ByteString.Lazy (toStrict)
-import Data.Function
 import Data.Maybe
-import Data.String (fromString)
 import Data.Text (Text)
 import Data.Time
-import Data.Time.Format.ISO8601
 import Database.SQLite.Simple
 import Database.SQLite.Simple.QQ
 import List.Transformer as List
-import Network.HTTP.Client hiding (responseBody)
-import Network.HTTP.Client.TLS
 import System.Environment
 import System.IO
 import Text.URI
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
-import qualified Data.Text.IO as T
-import GHC.Generics (Generic)
+import qualified Database.SQLite.Simple as SQLite
 import Network.HTTP.Req
     ( (/:),
       bsResponse,
       defaultHttpConfig,
       header,
       jsonResponse,
+      JsonResponse,
       req,
       responseBody,
       responseLinks,
@@ -53,11 +49,10 @@ import Network.HTTP.Req
       useHttpsURI,
       https,
       (/~),
-      headerRedacted,
+    --   headerRedacted,
       GET(GET),
       NoReqBody(NoReqBody) )
-import qualified Data.ByteString.Lazy.Char8 as LBS
-import Data.Aeson.Types (FromJSON, parseEither)
+import Data.Aeson.Types (parseEither) 
 
 
 data Project = Project { name :: String, projectId :: Int } deriving (Eq, Show)
@@ -71,9 +66,9 @@ data Job = Job
     { jobId        :: Int64
     , createdAt    :: UTCTime
     , webUrl       :: Text
-    , runnerId     :: Maybe Int
+    , runnerId     :: Maybe Int64
     , runnerName   :: Maybe Text
-    , jobName      :: Maybe Text
+    , jobName      :: Text
     , glbProjectId :: Maybe Int
     } deriving (Eq, Show)
 
@@ -92,7 +87,7 @@ instance FromJSON Job where
         runner <- v .:? "runner"
         runnerId <- traverse (.: "id") runner
         runnerName <- traverse (.: "name") runner
-        jobName <- v .:? "name"
+        jobName <- v .:? "name" .!= ""
         pipeline <- v .:? "pipeline"
         glbProjectId <- traverse (.: "project_id") pipeline
         return Job
@@ -118,6 +113,7 @@ data JobsResult
     | TooYoung URI
     deriving (Eq, Show)
 
+api :: (MonadIO m, FromJSON a) => URI -> BS.ByteString -> m (Network.HTTP.Req.JsonResponse a)
 api uri key =
     let Just (u, o) = useHttpsURI uri
     in reqq GET u NoReqBody jsonResponse (o <> header "PRIVATE-TOKEN" key)
@@ -162,8 +158,10 @@ instance ToJSON Trace where
 instance ToRow Trace where
     toRow (Trace j l) = toRow (j, l)
 
+-- | The simple api we all we wished for
 reqq method url body resp opts = liftIO $ runReq defaultHttpConfig (req method url body resp opts)
 
+getTrace :: MonadIO m =>  BS.ByteString -> JobWithProjectPath -> m Trace
 getTrace key j = do
     logg $ "GET TRACE " <> bstr (show (jobIdjwpp j))
     let Just (u,o) = useHttpsURI =<< mkURI (webUrljwpp j)
@@ -172,10 +170,12 @@ getTrace key j = do
         (jobIdjwpp j)
         (T.decodeUtf8 $ responseBody resp)
 
+bstr :: String -> BS.ByteString
 bstr = T.encodeUtf8 . T.pack
 
 -- | Move a staged job into the actual job table. Fetch and store its trace as
 -- well. Ignore duplicates.
+insertJob :: MonadIO m => BS.ByteString -> TMVar Connection -> JobWithProjectPath -> m ()
 insertJob key connVar job = do
     t <- getTrace key job
     bracketDB "insert trace" connVar $ \conn ->
@@ -185,6 +185,7 @@ logg :: MonadIO m => BS.ByteString -> m ()
 logg = liftIO . BS.hPutStrLn stderr
 
 -- | Make atomic db access via atomic access to the Connection.
+bracketDB :: MonadIO m => BS.ByteString -> TMVar a1 -> (a1 -> IO a2) -> m a2
 bracketDB msg v
     = liftIO
     . bracket (do c <- atomically (takeTMVar v); logg ("OPEN " <> msg); pure c) (\c -> logg ("CLOSE " <> msg) >> atomically (putTMVar v c))
@@ -217,7 +218,7 @@ instance ToRow JobWithProjectPath where
 
 instance FromRow JobWithProjectPath where
     fromRow = JobWithProjectPath <$> field <*> field <*> field <*> field <*> field <*> field <*> field
-    
+
 -- | Concurrently insert all staged jobs.
 clearStagedJobs key connVar = do
     logg "Clearing staged jobs"
@@ -236,13 +237,14 @@ data JobWithProjectPath = JobWithProjectPath
     { jobIdjwpp        :: Int64
     , createdAtjwpp    :: UTCTime
     , webUrljwpp       :: Text
-    , runnerIdjwpp     :: Maybe Int
+    , runnerIdjwpp     :: Maybe Int64
     , runnerNamejwpp   :: Maybe Text
-    , jobNamejwpp      :: Maybe Text
+    , jobNamejwpp      :: Text
     , project_pathjwpp :: Text
-    } deriving (Eq, Show)
+    } deriving (Eq, Show, Generic)
 
 -- | Fetch jobs and dump them in the job table
+stageJobs :: BS.ByteString -> TMVar Connection -> (UTCTime, UTCTime) -> URI -> IO ()
 stageJobs key connVar dateRange projURL = do
     logg "Staging jobs"
     runListT $ do
@@ -265,7 +267,7 @@ stageJobs key connVar dateRange projURL = do
                         execute conn "insert or ignore into job (job_id, job_date, web_url, runner_id, runner_name, job_name, project_path) values (?,?,?,?,?,?,?)" jobWithProjectPath
 
 -- | Initialize the database
-
+initDatabase :: MonadIO m => TMVar Connection -> m ()
 initDatabase connVar = do
     bracketDB "init database" connVar $ \conn -> do
         execute_ conn [sql|
@@ -293,3 +295,4 @@ fetchJobsBetweenDates dateRange = do
     forM_ projects $ \proj -> do
         stageJobs key connVar dateRange (jobsAPI proj Nothing)
     runParIO (clearStagedJobs key connVar)
+    

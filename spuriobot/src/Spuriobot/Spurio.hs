@@ -15,7 +15,6 @@ module Spuriobot.Spurio (
     insertLogtoFTS,
 ) where
 
-import Control.Monad.Catch (Exception)
 import Control.Monad.Trans (liftIO)
 import Control.Monad.Reader (asks)
 import Data.Maybe (mapMaybe)
@@ -26,7 +25,6 @@ import qualified Data.Text as T
 import qualified Text.Regex.TDFA as Regex
 import Data.Int (Int64)
 import Control.Monad
-import Control.Exception (throwIO)
 import Text.URI (render)
 import qualified Data.Time.Clock as Time
 
@@ -34,7 +32,7 @@ import GitLabApi
 import Spuriobot.Foundation
 import Spuriobot.RetryJob
 import qualified Spuriobot.DB as DB
-import GitLabJobs (Trace(..))
+import GitLabJobs (Trace(..),JobWithProjectPath(..))
 
 --
 -- Helpers
@@ -169,6 +167,7 @@ logFailures failures
 -- | Characteristics of a job that we test against.
 data Jobbo = Jobbo (Maybe JobFailureReason) Text
 
+-- | Given a failed job, deal with spurios (if any)
 processFailure :: GitLabBuildEvent -> Text -> Spuriobot ()
 processFailure GitLabBuildEvent { glbProjectId, glbBuildId } logs = do
     tok <- asks apiToken
@@ -195,9 +194,9 @@ insertLogtoFTS ev logs = do
         jobId = glbBuildId ev
     jobInfo <- liftIO $ fetchFinishedJob tok projectId jobId
     projInfo <- liftIO $ fetchProject tok projectId
-    let job = DB.Job
+    let job = JobWithProjectPath
             jobId
-            (T.pack . show $ glbBuildStatus ev)  -- Convert BuildStatus to Text
+            -- (T.pack . show $ glbBuildStatus ev)  -- Convert BuildStatus to Text
             (maybe (Time.UTCTime undefined 0) gitLabTimeToUTC (glbFinishedAt ev)) -- Use glbFinishedAt from ev
             (uriToText $ webUrl jobInfo)  -- Convert JobWebURI to Text
             (runnerId jobInfo)
@@ -212,10 +211,6 @@ insertLogtoFTS ev logs = do
     let jobTrace = Trace jobId logs
     liftIO $ DB.insertJobTrace [jobTrace] sqliteconnVar
 
-isJobFailureReasonEmpty :: FinishedJob -> Bool
-isJobFailureReasonEmpty jobInfo = case jobFailureReason jobInfo of
-    Just _ -> False
-    Nothing -> True
 
 -- | Map between our types and the DB's types
 mkDBFailures :: Functor f => Int64 -> FinishedJob -> Project -> f Failure -> f DB.Failure

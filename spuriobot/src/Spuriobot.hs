@@ -33,12 +33,10 @@ import Data.Text.Encoding (encodeUtf8)
 import Network.Wai.Middleware.RequestLogger (logStdout)
 import Servant
 import Database.PostgreSQL.Simple (Connection)
-import Data.Pool (Pool, newPool, defaultPoolConfig, withResource)
+import Data.Pool (Pool, newPool, defaultPoolConfig)
 import Control.Monad (void)
 import Control.Concurrent (newChan)
 import Control.Concurrent.STM (newTMVarIO, TMVar)
-import qualified Control.Concurrent.STM as STM
-import Database.SQLite.Simple (open, Connection)
 import qualified Database.SQLite.Simple as SQLite
 
 
@@ -52,11 +50,11 @@ import Control.Monad.Trans (liftIO)
 import Control.Monad.Reader (asks)
 
 
-import System.Environment (getArgs)
+-- import System.Environment (getArgs)
 import Data.Time (UTCTime, getCurrentTime, addUTCTime, nominalDay, parseTimeM, defaultTimeLocale)
 import Control.Exception (SomeException, handle, throwIO)
 import GitLabJobs (fetchJobsBetweenDates, initDatabase)
-import Text.URI (URI,render)
+import Text.URI (render)
 
 -- | API served by this app
 type WebHookAPI =
@@ -67,6 +65,11 @@ type WebHookAPI =
 
 webhookAPI :: Proxy WebHookAPI
 webhookAPI = Proxy
+
+data DateParseException = DateParseException String
+    deriving (Show)
+
+instance Exception DateParseException
 
 main :: IO ()
 main = do
@@ -80,17 +83,17 @@ main = do
 
     args <- getArgs
     case args of
-        ["fetchjobs", startStr, endStr] -> handle dateException $ do
-            let startDate = parseTimeM True defaultTimeLocale "%Y-%m-%d" startStr :: Maybe UTCTime
-            let endDate = parseTimeM True defaultTimeLocale "%Y-%m-%d" endStr :: Maybe UTCTime
+        ["fetchjobs", startStr, endStr] -> handle dateException $ handle allExceptions $ do
+            let startDate = parseDate startStr
+            let endDate = parseDate endStr
             case (startDate, endDate) of
-                (Just start, Just end) -> fetchJobsBetweenDates (start, end)
-                _ -> putStrLn "Invalid date format. Please use YYYY-MM-DD."
+                (Right start, Right end) -> fetchJobsBetweenDates (start, end)
+                (Left err, _) -> throwIO $ DateParseException err
+                (_, Left err) -> throwIO $ DateParseException err
         ["fetchjobs"] -> do
             now <- getCurrentTime
             let lastMonth = addUTCTime (-30 * nominalDay) now
             fetchJobsBetweenDates (lastMonth, now)
-        -- _ -> putStrLn "Usage: cabal run fetchjobs [start-date end-date]"
         _ -> do
             strApiToken <- GitLabToken . encodeUtf8 . T.pack <$> getEnv "GITLAB_API_TOKEN"
 
@@ -111,8 +114,17 @@ main = do
                 (runSpuriobot strApiToken pool chan connVar retryService)
                 (run 8080 $ logStdout $ serve webhookAPI (mainServer strApiToken pool chan connVar))
     where
-        dateException :: SomeException -> IO ()
-        dateException e = putStrLn $ "Error parsing dates: " ++ show e
+        parseDate :: String -> Either String UTCTime
+        parseDate str =
+            case parseTimeM True defaultTimeLocale "%Y-%m-%d" str of
+                Just date -> Right date
+                Nothing -> Left $ "Invalid date format for: " ++ str
+
+        dateException :: DateParseException -> IO ()
+        dateException (DateParseException msg) = putStrLn $ "Error parsing dates: " ++ msg
+
+        allExceptions :: SomeException -> IO ()
+        allExceptions e = putStrLn $ "An error occurred: " ++ show e
 
     
 

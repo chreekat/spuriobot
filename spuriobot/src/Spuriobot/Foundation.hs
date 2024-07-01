@@ -35,7 +35,7 @@ import {-# SOURCE #-} Spuriobot.RetryJob (RetryChan)
 import GitLabApi (GitLabToken)
 import qualified Database.SQLite.Simple as SQLite
 
--- Handler context (the Reader environment for the monad)
+-- | Handler context (the Reader environment for the monad)
 data SpuriobotContext = SpuriobotContext
     { apiToken :: GitLabToken
     , traceContext :: TraceContext
@@ -44,7 +44,7 @@ data SpuriobotContext = SpuriobotContext
     , connVar :: TMVar SQLite.Connection  -- SQLite connection
     }
 
--- Version 0 of tracing is running handlers in a context where there's a logging
+-- | Version 0 of tracing is running handlers in a context where there's a logging
 -- context we can use to decorate traces.
 type TraceContext = Text
 
@@ -52,7 +52,7 @@ type TraceContext = Text
 newtype Spuriobot a = Spuriobot { unSpuriobot :: ReaderT SpuriobotContext IO a }
     deriving newtype (Functor, Applicative, Monad, MonadReader SpuriobotContext, MonadIO, MonadThrow, MonadCatch, MonadMask, MonadConc)
 
--- Spuriobot action that adds to the trace context.
+-- | Spuriobot action that adds to the trace context.
 withTrace :: Text -> Spuriobot a -> Spuriobot a
 withTrace t_  = Spuriobot . withReaderT (modifyTraceContext (addContext t_)) . unSpuriobot
     where
@@ -61,17 +61,17 @@ withTrace t_  = Spuriobot . withReaderT (modifyTraceContext (addContext t_)) . u
             | otherwise = old_t <> ":" <> t
         modifyTraceContext f sc = sc { traceContext = f (traceContext sc) }
 
--- Spuriobot action that prints a trace message in the current trace context.
+-- | Spuriobot action that prints a trace message in the current trace context.
 -- Uses BS.putStr to prevent interleaving.
 trace :: Text -> Spuriobot ()
 trace t = withTrace t (liftIO . BS.putStr . encodeUtf8 . (<> "\n") =<< asks traceContext)
 
--- Spuriobot action that runs a database action for PostgreSQL.
+-- | Spuriobot action that runs a database action for PostgreSQL.
 runDB :: (Connection -> IO a) -> Spuriobot a
 runDB db_act =
     let run_ pool = liftIO $ withResource pool db_act
     in withTrace "db" $ run_ =<< asks dbPool
 
--- Runner for 'Spuriobot' that initializes the Reader environment.
+-- | Runner for 'Spuriobot' that initializes the Reader environment.
 runSpuriobot :: GitLabToken -> Pool Database.PostgreSQL.Simple.Connection -> RetryChan -> TMVar SQLite.Connection -> Spuriobot a -> IO a
 runSpuriobot tok pool chan connVar (Spuriobot act) = runReaderT act (SpuriobotContext tok "" pool chan connVar)
