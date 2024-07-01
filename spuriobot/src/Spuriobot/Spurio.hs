@@ -187,6 +187,7 @@ gitLabTimeToUTC (GitLabTime t) = t
 uriToText :: JobWebURI -> Text
 uriToText (JobWebURI uri) = T.pack (show uri)
 
+-- | This inserts the job metadata to job table in sql and log trace in job_trace table setting up FTS database
 insertLogtoFTS :: GitLabBuildEvent -> Text -> Spuriobot ()
 insertLogtoFTS ev logs = do
     tok <- asks apiToken

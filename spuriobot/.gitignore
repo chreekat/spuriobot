@@ -3,3 +3,4 @@ result
 .stack-work
 .nix-profiles
 .postgres-work
+jobs.db

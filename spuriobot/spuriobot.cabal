@@ -31,42 +31,37 @@ library
       OverloadedStrings
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
   build-depends:
-      aeson >= 2.1.2.1
-    , async >= 2.2.4
-    , attoparsec >= 0.14.4
-    , attoparsec-iso8601 >= 1.1.0.0
-    , base >= 4.17.2.1 && < 5
-    , bytestring >= 0.11.5.3
-    , concurrency >= 1.11.0.3
-    , containers >= 0.6.7
-    , exceptions >= 0.10.5
-    , resource-pool >= 0.4.0.0
-    , http-client >= 0.7.15
-    , modern-uri >= 0.3.6.1
-    , mtl >= 2.2.2
-    , postgresql-simple >= 0.6.5.1
-    , regex-tdfa >= 1.3.2.2
-    , retry >= 0.9.3.1
-    , req >= 3.13.1
-    , servant >= 0.19.1
-    , servant-client >= 0.19
-    , servant-server >= 0.19.2
-    , text >= 2.0.2
-    , time >= 1.12.2
-    , wai >= 3.2.3
-    , wai-extra >= 3.1.13.0
-    , warp >= 3.3.25
-    , unordered-containers >= 0.2.19.1
-    , vector >= 0.13.1.0
-    , http-types >= 0.12.3
-    , network-uri >= 2.6.4.2
-    , http-client-tls >= 0.3.6.1
-    , stm >= 2.5.1.0
+      aeson
+    , async
+    , attoparsec
+    , attoparsec-iso8601
+    , base >=4.7 && <5
+    , bytestring
+    , concurrency
+    , containers
+    , exceptions
+    , resource-pool
+    , http-client
+    , modern-uri
+    , mtl
+    , postgresql-simple
+    , regex-tdfa
+    , retry
+    , req ^>= 3.13.0
+    , servant
+    , servant-client
+    , servant-server
+    , text
+    , time
+    , wai
+    , wai-extra
+    , warp
+    , stm
+    , sqlite-simple
     , monad-par
     , monad-par-extras
-    , sqlite-simple
     , list-transformer
-    , parsec >= 3.1.16.1
+
   default-language: Haskell2010
 
 executable spuriobot

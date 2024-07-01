@@ -163,15 +163,6 @@ processBuildEvent ev = do
         -- FIXME explain use of clearRetry here.
         Just _ -> withTrace "finished" $ processFinishedJob ev `finally` clearRetry (glbBuildId ev)
 
--- processFinishedJob :: GitLabBuildEvent -> Spuriobot ()
--- processFinishedJob ev = do
---     insertLogtoFTS ev
---     -- Handle specific job statuses
---     case glbBuildStatus ev of
---         OtherBuildStatus x -> trace x
---         Failed -> withTrace "failed" $ processFailure ev
-
-
 data SpuriobotException = ParseUrlFail
     deriving stock (Eq, Show)
     deriving anyclass (Exception)

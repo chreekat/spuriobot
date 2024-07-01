@@ -6,6 +6,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE DeriveAnyClass #-}
 
+-- | Module for backfilling FTS database for all job logs till that point. 
 module GitLabJobs (
     fetchJobsBetweenDates,
     initDatabase,
@@ -57,11 +58,13 @@ import Data.Aeson.Types (parseEither)
 
 data Project = Project { name :: String, projectId :: Int } deriving (Eq, Show)
 
+-- | List of projects we care about.
 projects :: [Project]
 projects =
     [ Project "ghc/ghc" 1
     ]
 
+-- | The elements of a GitLab REST API Job entity we care about
 data Job = Job
     { jobId        :: Int64
     , createdAt    :: UTCTime
@@ -113,11 +116,14 @@ data JobsResult
     | TooYoung URI
     deriving (Eq, Show)
 
+-- | A quick and partial action that adds a PRIVATE-TOKEN header with the key
 api :: (MonadIO m, FromJSON a) => URI -> BS.ByteString -> m (Network.HTTP.Req.JsonResponse a)
 api uri key =
     let Just (u, o) = useHttpsURI uri
     in reqq GET u NoReqBody jsonResponse (o <> header "PRIVATE-TOKEN" key)
 
+-- | Get a list of jobs in a single query. Includes info about whether we should
+-- continue.
 fetchJobs key (minDate, maxDate) jobUrl connVar = do
     resp <- api jobUrl key
 
@@ -133,6 +139,7 @@ fetchJobs key (minDate, maxDate) jobUrl connVar = do
     logg msg
     pure res
 
+-- | Get all jobs withen a given age range.
 getJobs
     :: BS.ByteString
     -> (UTCTime, UTCTime)
@@ -161,6 +168,7 @@ instance ToRow Trace where
 -- | The simple api we all we wished for
 reqq method url body resp opts = liftIO $ runReq defaultHttpConfig (req method url body resp opts)
 
+-- | Get the trace for a job
 getTrace :: MonadIO m =>  BS.ByteString -> JobWithProjectPath -> m Trace
 getTrace key j = do
     logg $ "GET TRACE " <> bstr (show (jobIdjwpp j))
