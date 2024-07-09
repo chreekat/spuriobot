@@ -18,26 +18,29 @@ module Spuriobot (
     main,
 ) where
 
-import Control.Monad.Catch (Exception)
-import Network.Wai.Handler.Warp (run)
-import System.IO (hSetBuffering, stdout, BufferMode(..))
-import System.Environment (
-    getArgs,
-    getEnv,
- )
+import Control.Concurrent (newChan)
 import Control.Concurrent.Async (race_)
 import Control.Concurrent.Classy (fork, getNumCapabilities)
+import Control.Concurrent.STM (newTMVarIO, TMVar)
+import Control.Exception (SomeException, handle, throwIO)
+import Control.Monad (void)
+import Control.Monad.Catch ( Exception, finally )
+import Control.Monad.Reader (asks)
+import Control.Monad.Trans (liftIO)
+import Data.Pool (Pool, newPool, defaultPoolConfig)
 import Data.Text (Text)
-import qualified Data.Text as T
 import Data.Text.Encoding (encodeUtf8)
+import Data.Time (UTCTime, getCurrentTime, addUTCTime, nominalDay, parseTimeM, defaultTimeLocale)
+import Database.PostgreSQL.Simple (Connection)
+import Network.Wai.Handler.Warp (run)
 import Network.Wai.Middleware.RequestLogger (logStdout)
 import Servant
-import Database.PostgreSQL.Simple (Connection)
-import Data.Pool (Pool, newPool, defaultPoolConfig)
-import Control.Monad (void)
-import Control.Concurrent (newChan)
-import Control.Concurrent.STM (newTMVarIO, TMVar)
+import System.Environment ( getArgs, getEnv,)
+import System.IO (hSetBuffering, stdout, BufferMode(..))
+import Text.URI (render)
+import qualified Data.Text as T
 import qualified Database.SQLite.Simple as SQLite
+
 
 
 import qualified Spuriobot.DB as DB
@@ -45,16 +48,8 @@ import GitLabApi
 import Spuriobot.RetryJob
 import Spuriobot.Foundation
 import Spuriobot.Spurio
-import Control.Monad.Catch (finally)
-import Control.Monad.Trans (liftIO)
-import Control.Monad.Reader (asks)
-
-
--- import System.Environment (getArgs)
-import Data.Time (UTCTime, getCurrentTime, addUTCTime, nominalDay, parseTimeM, defaultTimeLocale)
-import Control.Exception (SomeException, handle, throwIO)
 import GitLabJobs (fetchJobsBetweenDates, initDatabase)
-import Text.URI (render)
+
 
 -- | API served by this app
 type WebHookAPI =
