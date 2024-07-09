@@ -8,7 +8,7 @@
 {-# LANGUAGE RecordWildCards #-}
 
 -- | Module for backfilling FTS database for all job logs till that point.
-module GitLabJobs (
+module Spuriobot.Backfill (
     fetchJobsBetweenDates,
     initDatabase,
     bracketDB,
@@ -36,7 +36,6 @@ import Text.URI
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
-import qualified Database.SQLite.Simple as SQLite
 import Network.HTTP.Req
     ( (/:),
       bsResponse,

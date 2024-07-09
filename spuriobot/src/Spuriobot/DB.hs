@@ -24,7 +24,7 @@ import qualified Database.PostgreSQL.Simple as PG
 import qualified Database.SQLite.Simple as SQLite
 import Control.Concurrent.STM (TMVar)
 
-import GitLabJobs (bracketDB,Trace(..),JobWithProjectPath(..))
+import Spuriobot.Backfill (bracketDB,Trace(..),JobWithProjectPath(..))
 
 type FailType = Text
 

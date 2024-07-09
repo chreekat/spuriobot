@@ -21,7 +21,7 @@ library
       Spuriobot.RetryJob
       Spuriobot.Spurio
       GitLabApi
-      GitLabJobs
+      Spuriobot.Backfill
 
   other-modules:
       Paths_spuriobot

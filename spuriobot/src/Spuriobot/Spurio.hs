@@ -33,7 +33,7 @@ import GitLabApi
 import Spuriobot.Foundation
 import Spuriobot.RetryJob
 import qualified Spuriobot.DB as DB
-import GitLabJobs (Trace(..),JobWithProjectPath(..))
+import Spuriobot.Backfill (Trace(..),JobWithProjectPath(..))
 
 --
 -- Helpers

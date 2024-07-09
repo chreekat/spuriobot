@@ -48,7 +48,7 @@ import GitLabApi
 import Spuriobot.RetryJob
 import Spuriobot.Foundation
 import Spuriobot.Spurio
-import GitLabJobs (fetchJobsBetweenDates, initDatabase)
+import Spuriobot.Backfill (fetchJobsBetweenDates, initDatabase)
 
 
 -- | API served by this app
