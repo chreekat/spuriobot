@@ -6,6 +6,7 @@
 -- Used for MonadConc:
 {-# LANGUAGE UndecidableInstances #-}
 
+-- | This module is for handling spurious failures and retrying failed jobs.
 module Spuriobot.Spurio (
     collectFailures,
     Check(..),
@@ -164,7 +165,10 @@ logFailures failures
 data Jobbo = Jobbo (Maybe JobFailureReason) Text
 
 -- | Given a failed job, deal with spurios (if any)
-processFailure :: GitLabBuildEvent -> Text -> Spuriobot ()
+processFailure
+    :: GitLabBuildEvent
+    -> Text -- ^ Job log
+    -> Spuriobot ()
 processFailure GitLabBuildEvent { glbProjectId, glbBuildId } logs = do
     tok <- asks apiToken
     jobInfo <- liftIO $ fetchFinishedJob tok glbProjectId glbBuildId
