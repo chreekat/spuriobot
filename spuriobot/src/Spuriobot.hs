@@ -140,7 +140,7 @@ mainServer :: GitLabToken -> Pool Database.PostgreSQL.Simple.Connection -> Retry
 mainServer tok pool chan connVar = hoistServer webhookAPI (nt tok pool chan connVar) spurioServer
   where
     nt :: GitLabToken -> Pool Database.PostgreSQL.Simple.Connection -> RetryChan -> TMVar SQLite.Connection -> Spuriobot a -> Handler a
-    nt tok pool chan connVar action = liftIO $ runSpuriobot tok pool chan connVar action
+    nt t p c cv action = liftIO $ runSpuriobot t p c cv action
 
 -- | This turns the a request processor into a webhook endpoint by immediately
 -- forking to do the real work.
