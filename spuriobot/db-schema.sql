@@ -40,16 +40,3 @@ create table if not exists ci_failure (
     project_path text NULL,
     constraint unique_job_failure unique (job_id, type)
 );
-
-
-CREATE TABLE IF NOT EXISTS ci_job (
-    t_job_id BIGSERIAL PRIMARY KEY,
-    job_id BIGINT NOT NULL,
-    job_date TIMESTAMP WITH TIME ZONE NULL,
-    web_url TEXT NULL,
-    runner_id BIGINT NULL,
-    runner_name TEXT NULL,
-    job_name TEXT NULL,
-    project_path TEXT NULL,
-    CONSTRAINT unique_job UNIQUE (job_id, type)
-);
