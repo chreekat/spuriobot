@@ -5,6 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE RecordWildCards #-}
 
 -- | Module for backfilling FTS database for all job logs till that point. 
 module GitLabJobs (
@@ -93,15 +94,7 @@ instance FromJSON Job where
         jobName <- v .:? "name" .!= ""
         pipeline <- v .:? "pipeline"
         glbProjectId <- traverse (.: "project_id") pipeline
-        return Job
-            { jobId = jobId
-            , createdAt = createdAt
-            , webUrl = webUrl
-            , runnerId = runnerId
-            , runnerName = runnerName
-            , jobName = jobName
-            , glbProjectId = glbProjectId
-            }
+        return Job {..}
 
 jobsAPI :: Project -> Maybe Int -> URI
 jobsAPI (projectId -> i) page = fromJust $ mkURI $
@@ -124,13 +117,13 @@ api uri key =
 
 -- | Get a list of jobs in a single query. Includes info about whether we should
 -- continue.
-fetchJobs key (minDate, maxDate) jobUrl connVar = do
+fetchJobs key (minDate, maxDate) jobUrl = do
     resp <- api jobUrl key
 
     nextLink <- head <$> responseLinks "rel" "next" resp
-    let jobs = responseBody resp
+    let jobs' = responseBody resp
 
-    let (msg, res) = f jobs nextLink
+    let (msg, res) = f jobs' nextLink
         tooYoung j = createdAt j > maxDate
         tooOld j = createdAt j < minDate
         f jobs link | all tooYoung jobs = ("Too young", TooYoung link)
@@ -148,7 +141,7 @@ getJobs
     -> ListT IO [Job]
 getJobs key dateRange jobUrl connVar = do
     logg $ "Get " <> T.encodeUtf8 (render jobUrl)
-    res <- lift $ fetchJobs key dateRange jobUrl connVar
+    res <- lift $ fetchJobs key dateRange jobUrl
     case res of
         NoMore jobs -> pure jobs
         WithMore nextUrl jobs -> pure jobs List.<|> getJobs key dateRange nextUrl connVar

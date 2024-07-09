@@ -74,4 +74,4 @@ runDB db_act =
 
 -- | Runner for 'Spuriobot' that initializes the Reader environment.
 runSpuriobot :: GitLabToken -> Pool Database.PostgreSQL.Simple.Connection -> RetryChan -> TMVar SQLite.Connection -> Spuriobot a -> IO a
-runSpuriobot tok pool chan connVar (Spuriobot act) = runReaderT act (SpuriobotContext tok "" pool chan connVar)
+runSpuriobot tok pool chan conn (Spuriobot act) = runReaderT act (SpuriobotContext tok "" pool chan conn)

@@ -100,8 +100,8 @@ main = do
             -- Die early if no DB connection. (Laziness in createPool bites us
             -- otherwise.)
             DB.close =<< DB.connect
-            connVar <- newTMVarIO =<< SQLite.open "jobs.db"
-            initDatabase connVar
+            connVar' <- newTMVarIO =<< SQLite.open "jobs.db"
+            initDatabase connVar'
 
             let fiveMin = 60 * 5
             -- See https://github.com/scrive/pool/issues/31#issuecomment-2043213626
@@ -111,8 +111,8 @@ main = do
             chan <- RetryChan <$> newChan
 
             race_
-                (runSpuriobot strApiToken pool chan connVar retryService)
-                (run 8080 $ logStdout $ serve webhookAPI (mainServer strApiToken pool chan connVar))
+                (runSpuriobot strApiToken pool chan connVar' retryService)
+                (run 8080 $ logStdout $ serve webhookAPI (mainServer strApiToken pool chan connVar'))
     where
         parseDate :: String -> Either String UTCTime
         parseDate str =

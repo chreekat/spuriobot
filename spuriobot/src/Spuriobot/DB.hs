@@ -51,8 +51,6 @@ insertFailures x conn = PG.executeMany conn
         |]
     (toList x)
 
-type JobType = Text
-
 -- | Function to insert batch of jobs to SQLite FTS database
 insertJobs :: Foldable f => f JobWithProjectPath -> TMVar SQLite.Connection -> IO () 
 insertJobs x connVar = do
