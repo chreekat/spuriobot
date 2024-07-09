@@ -7,7 +7,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE RecordWildCards #-}
 
--- | Module for backfilling FTS database for all job logs till that point. 
+-- | Module for backfilling FTS database for all job logs till that point.
 module GitLabJobs (
     fetchJobsBetweenDates,
     initDatabase,
@@ -54,7 +54,7 @@ import Network.HTTP.Req
     --   headerRedacted,
       GET(GET),
       NoReqBody(NoReqBody) )
-import Data.Aeson.Types (parseEither) 
+import Data.Aeson.Types (parseEither)
 
 
 data Project = Project { name :: String, projectId :: Int } deriving (Eq, Show)
@@ -296,4 +296,4 @@ fetchJobsBetweenDates dateRange = do
     forM_ projects $ \proj -> do
         stageJobs key connVar dateRange (jobsAPI proj Nothing)
     runParIO (clearStagedJobs key connVar)
-    
+

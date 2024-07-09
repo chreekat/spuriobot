@@ -46,10 +46,6 @@ import GitLabJobs (Trace(..),JobWithProjectPath(..))
 -- Controller logic
 --
 
--- data SpuriobotException = ParseUrlFail
---     deriving stock (Eq, Show)
---     deriving anyclass Exception
-
 -- the code that we inject into the database
 type FailureErrorCode = Text
 
@@ -203,10 +199,8 @@ insertLogtoFTS ev logs = do
             (runnerId jobInfo)
             (runnerName jobInfo)
             (jobName jobInfo)
-            (projPath projInfo) 
+            (projPath projInfo)
 
-    -- logJob job
-    -- void $ runDB $ DB.insertJobs [job] 
     sqliteconnVar <- asks connVar
     liftIO $ DB.insertJobs [job] sqliteconnVar
     let jobTrace = Trace jobId logs

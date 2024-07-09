@@ -71,11 +71,6 @@ main = do
     -- Ensure journald gets our output
     hSetBuffering stdout NoBuffering
 
-    -- args <- getArgs
-    -- case args of
-    --     [] -> pure ()
-    --     (_:_) -> error "Usage: spuriobot"
-
     args <- getArgs
     case args of
         ["fetchjobs", startStr, endStr] -> handle dateException $ handle allExceptions $ do
@@ -121,7 +116,7 @@ main = do
         allExceptions :: SomeException -> IO ()
         allExceptions e = putStrLn $ "An error occurred: " ++ show e
 
-    
+
 
 spurioServer :: ServerT WebHookAPI Spuriobot
 spurioServer = jobEvent :<|> systemEvent :<|> jobEvent
@@ -129,8 +124,6 @@ spurioServer = jobEvent :<|> systemEvent :<|> jobEvent
         jobEvent = mkHook (showt . glbBuildId) processBuildEvent
         systemEvent = mkHook (const "system") processSystemEvent
 
--- mainServer :: GitLabToken -> Pool Database.PostgreSQL.Simple.Connection -> RetryChan -> TMVar SQLite.Connection -> Server WebHookAPI
--- mainServer tok pool chan = hoistServer webhookAPI (runSpuriobot tok pool chan connVar) spurioServer
 mainServer :: GitLabToken -> Pool Database.PostgreSQL.Simple.Connection -> RetryChan -> TMVar SQLite.Connection -> Server WebHookAPI
 mainServer tok pool chan connVar = hoistServer webhookAPI (nt tok pool chan connVar) spurioServer
   where

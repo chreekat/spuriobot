@@ -2,7 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveAnyClass #-}
 
--- | Module for all db queries. 
+-- | Module for all db queries.
 module Spuriobot.DB (
     connect,
     Database.PostgreSQL.Simple.close,
@@ -52,7 +52,7 @@ insertFailures x conn = PG.executeMany conn
     (toList x)
 
 -- | Function to insert batch of jobs to SQLite FTS database
-insertJobs :: Foldable f => f JobWithProjectPath -> TMVar SQLite.Connection -> IO () 
+insertJobs :: Foldable f => f JobWithProjectPath -> TMVar SQLite.Connection -> IO ()
 insertJobs x connVar = do
     let jobsToInsert = map (\(JobWithProjectPath a c d e f g h) -> (a, c, d, e, f, g, h)) (toList x)
     bracketDB "insert jobs" connVar $ \conn ->
