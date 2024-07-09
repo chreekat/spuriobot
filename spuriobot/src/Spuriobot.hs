@@ -36,7 +36,7 @@ import Network.Wai.Handler.Warp (run)
 import Network.Wai.Middleware.RequestLogger (logStdout)
 import Servant
 import System.Environment ( getArgs, getEnv,)
-import System.IO (hSetBuffering, stdout, BufferMode(..))
+import System.IO (hSetBuffering, stdout, BufferMode(..), hPutStrLn, stderr)
 import Text.URI (render)
 import qualified Data.Text as T
 import qualified Database.SQLite.Simple as SQLite
@@ -72,19 +72,24 @@ main = do
     hSetBuffering stdout NoBuffering
 
     args <- getArgs
+    now <- getCurrentTime
+    let lastMonth = addUTCTime (-30 * nominalDay) now
     case args of
-        ["fetchjobs", startStr, endStr] -> handle dateException $ handle allExceptions $ do
+        ["fetchjobs", startStr, endStr] -> handle dateException $ do
             let startDate = parseDate startStr
             let endDate = parseDate endStr
             case (startDate, endDate) of
                 (Right start, Right end) -> fetchJobsBetweenDates (start, end)
                 (Left err, _) -> throwIO $ DateParseException err
                 (_, Left err) -> throwIO $ DateParseException err
+        ["fetchjobs", startStr] -> handle dateException $ do
+            let startDate = parseDate startStr
+            case startDate of
+                Right start -> fetchJobsBetweenDates (start, now)
+                Left err -> throwIO $ DateParseException err
         ["fetchjobs"] -> do
-            now <- getCurrentTime
-            let lastMonth = addUTCTime (-30 * nominalDay) now
             fetchJobsBetweenDates (lastMonth, now)
-        _ -> do
+        [] -> do
             strApiToken <- GitLabToken . encodeUtf8 . T.pack <$> getEnv "GITLAB_API_TOKEN"
 
             -- Die early if no DB connection. (Laziness in createPool bites us
@@ -103,6 +108,21 @@ main = do
             race_
                 (runSpuriobot strApiToken pool chan connVar' retryService)
                 (run 8080 $ logStdout $ serve webhookAPI (mainServer strApiToken pool chan connVar'))
+        _ -> hPutStrLn stderr $ unlines
+            [ ""
+            , "spuriobot: Spurious failure tool for CI"
+            , ""
+            , "Usage as webhook:"
+            , "    spuriobot"
+            , ""
+            , "Usage as tool for backfilling job logs:"
+            , "    spuriobot fetchjobs [start [end]]"
+            , ""
+            , "    Dates are in the format YYYY-MM-DD."
+            , "    Default start is 30 days ago."
+            , "    Default end is now."
+            ]
+
     where
         parseDate :: String -> Either String UTCTime
         parseDate str =
@@ -112,11 +132,6 @@ main = do
 
         dateException :: DateParseException -> IO ()
         dateException (DateParseException msg) = putStrLn $ "Error parsing dates: " ++ msg
-
-        allExceptions :: SomeException -> IO ()
-        allExceptions e = putStrLn $ "An error occurred: " ++ show e
-
-
 
 spurioServer :: ServerT WebHookAPI Spuriobot
 spurioServer = jobEvent :<|> systemEvent :<|> jobEvent
