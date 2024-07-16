@@ -1,5 +1,23 @@
 image: nixos/nix
 
+# Don't run branch pipelines and merge request pipelines for the same push.
+#
+# This boilerplate is unfortunately necessary because otherwise it's very easy
+# to trigger duplicate pipelines on GitLab. It's ridiculous.
+#
+# https://docs.gitlab.com/ee/ci/yaml/workflow.html#switch-between-branch-pipelines-and-merge-request-pipelines
+# https://docs.gitlab.com/ee/ci/jobs/job_rules.html#avoid-duplicate-pipelines
+#
+# "If a job uses rules, a single action, like pushing a commit to a branch, can
+# trigger multiple pipelines. You don’t have to explicitly configure rules for
+# multiple types of pipeline to trigger them accidentally."
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+
 default:
   tags: 
     - x86_64-linux
