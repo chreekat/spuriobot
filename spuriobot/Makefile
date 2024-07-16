@@ -32,6 +32,10 @@ export PGHOST := $(PGDATA)
 pg_isready := pg_isready -q
 pg_ctl := $(shell pg_config --bindir)/pg_ctl
 
+ifneq (0, $(.SHELLSTATUS))
+    $(error Command failed)
+endif
+
 # Start postgres process, put all the files in the same place, and wait for
 # startup to complete before continuting.
 # pg_ctl: -o: postgres options (need quotes), -l: log file path
