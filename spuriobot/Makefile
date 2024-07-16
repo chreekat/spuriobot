@@ -2,7 +2,7 @@
 
 CACHIX_CONFIG ?= $(HOME)/.config/cachix/cachix.dhall
 CACHIX ?= cachix -c $(CACHIX_CONFIG)
-NIX ?= nix
+NIX ?= nix --quiet --print-build-logs
 
 test:
 	cabal test
