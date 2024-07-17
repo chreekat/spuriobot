@@ -87,9 +87,8 @@ instance FromJSON Job where
         jobId <- v .: "id"
         createdAt <- v .: "created_at"
         webUrl <- v .: "web_url"
-        runner <- v .:? "runner"
-        runnerId <- traverse (.: "id") runner
-        runnerName <- traverse (.: "name") runner
+        runnerId <- v .:? "runner" >>= maybe (pure Nothing) (.: "id")
+        runnerName <-  v .:? "runner" >>= maybe (pure Nothing) (.: "description")
         jobName <- v .: "name"
         pipeline <- v .:? "pipeline"
         glbProjectId <- traverse (.: "project_id") pipeline
