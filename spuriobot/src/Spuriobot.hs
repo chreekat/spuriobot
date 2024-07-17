@@ -22,7 +22,7 @@ import Control.Concurrent (newChan)
 import Control.Concurrent.Async (race_)
 import Control.Concurrent.Classy (fork, getNumCapabilities)
 import Control.Concurrent.STM (newTMVarIO, TMVar)
-import Control.Exception (SomeException, handle, throwIO)
+import Control.Exception (handle, throwIO)
 import Control.Monad (void)
 import Control.Monad.Catch ( Exception, finally )
 import Control.Monad.Reader (asks)
@@ -61,7 +61,7 @@ type WebHookAPI =
 webhookAPI :: Proxy WebHookAPI
 webhookAPI = Proxy
 
-data DateParseException = DateParseException String
+newtype DateParseException = DateParseException String
     deriving (Show)
 
 instance Exception DateParseException
@@ -140,7 +140,7 @@ spurioServer = jobEvent :<|> systemEvent :<|> jobEvent
         systemEvent = mkHook (const "system") processSystemEvent
 
 mainServer :: GitLabToken -> Pool Database.PostgreSQL.Simple.Connection -> RetryChan -> TMVar SQLite.Connection -> Server WebHookAPI
-mainServer tok pool chan connVar = hoistServer webhookAPI (nt tok pool chan connVar) spurioServer
+mainServer tok pool chan connVar' = hoistServer webhookAPI (nt tok pool chan connVar') spurioServer
   where
     nt :: GitLabToken -> Pool Database.PostgreSQL.Simple.Connection -> RetryChan -> TMVar SQLite.Connection -> Spuriobot a -> Handler a
     nt t p c cv action = liftIO $ runSpuriobot t p c cv action

@@ -53,7 +53,10 @@ import Network.HTTP.Req
     --   headerRedacted,
       GET(GET),
       NoReqBody(NoReqBody) )
+import qualified Network.HTTP.Req as Req
 import Data.Aeson.Types (parseEither)
+import Control.Monad.Catch (MonadThrow)
+import Data.Proxy (Proxy)
 
 
 data Project = Project { name :: String, projectId :: Int } deriving (Eq, Show)
@@ -110,11 +113,12 @@ data JobsResult
 -- | A quick and partial action that adds a PRIVATE-TOKEN header with the key
 api :: (MonadIO m, FromJSON a) => URI -> BS.ByteString -> m (Network.HTTP.Req.JsonResponse a)
 api uri key =
-    let Just (u, o) = useHttpsURI uri
+    let (u, o) = fromMaybe (error "Bad URI parse") (useHttpsURI uri)
     in reqq GET u NoReqBody jsonResponse (o <> header "PRIVATE-TOKEN" key)
 
 -- | Get a list of jobs in a single query. Includes info about whether we should
 -- continue.
+fetchJobs :: (MonadIO m, MonadThrow m) => BS.ByteString -> (UTCTime, UTCTime) -> URI -> m JobsResult
 fetchJobs key (minDate, maxDate) jobUrl = do
     resp <- api jobUrl key
 
@@ -157,13 +161,16 @@ instance ToRow Trace where
     toRow (Trace j l) = toRow (j, l)
 
 -- | The simple api we all we wished for
+reqq
+    :: (Req.HttpBodyAllowed    (Req.AllowsBody method) (Req.ProvidesBody body), MonadIO m, Req.HttpMethod method, Req.HttpBody body,  Req.HttpResponse a)
+    => method -> Req.Url scheme -> body -> Proxy a -> Req.Option scheme -> m a
 reqq method url body resp opts = liftIO $ runReq defaultHttpConfig (req method url body resp opts)
 
 -- | Get the trace for a job
 getTrace :: MonadIO m =>  BS.ByteString -> JobWithProjectPath -> m Trace
 getTrace key j = do
     logg $ "GET TRACE " <> bstr (show (jobIdjwpp j))
-    let Just (u,o) = useHttpsURI =<< mkURI (webUrljwpp j)
+    let (u,o) = fromMaybe (error "Bad URI parse") (useHttpsURI =<< mkURI (webUrljwpp j))
     resp <- reqq GET (u /: "raw") NoReqBody bsResponse (o <> header "PRIVATE-TOKEN" key)
     pure $ Trace
         (jobIdjwpp j)
@@ -191,7 +198,7 @@ bracketDB msg v
 
 newtype GitLabToken = GitLabToken BS.ByteString
 
-data ProjectInfo = ProjectInfo
+newtype ProjectInfo = ProjectInfo
     { project_path :: T.Text
     } deriving (Eq, Show)
 
@@ -219,6 +226,7 @@ instance FromRow JobWithProjectPath where
     fromRow = JobWithProjectPath <$> field <*> field <*> field <*> field <*> field <*> field <*> field
 
 -- | Concurrently insert all staged jobs.
+clearStagedJobs :: BS.ByteString -> TMVar Connection -> ParIO ()
 clearStagedJobs key connVar = do
     logg "Clearing staged jobs"
     jobs <- bracketDB "jobs with no traces" connVar
