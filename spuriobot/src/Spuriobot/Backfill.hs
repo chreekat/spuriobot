@@ -68,6 +68,8 @@ projects =
     ]
 
 -- | The elements of a GitLab REST API Job entity we care about
+-- FIXME: We care about a ton of stuff, actually, so this should be greatly
+-- expanded.
 data Job = Job
     { jobId        :: Int64
     , createdAt    :: UTCTime
@@ -126,6 +128,7 @@ fetchJobs key (minDate, maxDate) jobUrl = do
     let jobs' = responseBody resp
 
     let (msg, res) = f jobs' nextLink
+        -- Check if we're still in the age range
         tooYoung j = createdAt j > maxDate
         tooOld j = createdAt j < minDate
         f jobs link | all tooYoung jobs = ("Too young", TooYoung link)
@@ -260,6 +263,8 @@ stageJobs key connVar dateRange projURL = do
             [] -> pure ()
             jobs -> do
                 forM_ jobs $ \job -> do
+                    -- FIXME: We already have the project url, so we should
+                    -- already have the project path as well.
                     projectInfo <- liftIO $ fetchProject (GitLabToken key) (fromMaybe 0 (glbProjectId job))
                     let jobWithProjectPath = JobWithProjectPath
                                 { jobIdjwpp = jobId job
