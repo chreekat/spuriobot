@@ -170,13 +170,13 @@ reqq
 reqq method url body resp opts = liftIO $ runReq defaultHttpConfig (req method url body resp opts)
 
 -- | Get the trace for a job
-getTrace :: MonadIO m =>  BS.ByteString -> JobWithProjectPath -> m Trace
+getTrace :: MonadIO m =>  BS.ByteString -> Job -> m Trace
 getTrace key j = do
-    logg $ "GET TRACE " <> bstr (show (jobIdjwpp j))
-    let (u,o) = fromMaybe (error "Bad URI parse") (useHttpsURI =<< mkURI (webUrljwpp j))
+    logg $ "GET TRACE " <> bstr (show (jobId j))
+    let (u,o) = fromMaybe (error "Bad URI parse") (useHttpsURI =<< mkURI (webUrl j))
     resp <- reqq GET (u /: "raw") NoReqBody bsResponse (o <> header "PRIVATE-TOKEN" key)
     pure $ Trace
-        (jobIdjwpp j)
+        (jobId j)
         (T.decodeUtf8 $ responseBody resp)
 
 bstr :: String -> BS.ByteString
@@ -184,7 +184,7 @@ bstr = T.encodeUtf8 . T.pack
 
 -- | Move a staged job into the actual job table. Fetch and store its trace as
 -- well. Ignore duplicates.
-insertJob :: MonadIO m => BS.ByteString -> TMVar Connection -> JobWithProjectPath -> m ()
+insertJob :: MonadIO m => BS.ByteString -> TMVar Connection -> Job -> m ()
 insertJob key connVar job = do
     t <- getTrace key job
     bracketDB "insert trace" connVar $ \conn ->
