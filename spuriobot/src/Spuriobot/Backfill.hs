@@ -13,11 +13,11 @@ module Spuriobot.Backfill (
     initDatabase,
     bracketDB,
     Trace(..),
-    JobWithProjectPath(..)
+    JobWithProjectPath(..),
+    Job(Job),
 ) where
 
 import Data.Int (Int64)
-import GHC.Generics
 import Control.Concurrent.STM
 import Control.Exception
 import Control.Monad
@@ -222,11 +222,12 @@ fetchProject (GitLabToken tok) projectId = do
         Right proj -> return proj
 
 instance ToRow JobWithProjectPath where
-    toRow (JobWithProjectPath jobId createdAt webUrl runnerId runnerName jobName projectPath) =
-        toRow (jobId, createdAt, webUrl, runnerId, runnerName, jobName, projectPath)
+    toRow (JobWithProjectPath j p) = toRow (j :. Only p)
 
 instance FromRow JobWithProjectPath where
-    fromRow = JobWithProjectPath <$> field <*> field <*> field <*> field <*> field <*> field <*> field
+    fromRow = do
+        j :. Only p <- fromRow
+        pure $ JobWithProjectPath j p
 
 -- | Concurrently insert all staged jobs.
 clearStagedJobs :: BS.ByteString -> TMVar Connection -> ParIO ()
@@ -243,15 +244,8 @@ clearStagedJobs key connVar = do
     logg ("CLEAR " <> bstr (show (length jobs)) <> " JOBS")
     void $ parMapM (insertJob key connVar) jobs
 
-data JobWithProjectPath = JobWithProjectPath
-    { jobIdjwpp        :: Int64
-    , createdAtjwpp    :: UTCTime
-    , webUrljwpp       :: Text
-    , runnerIdjwpp     :: Maybe Int64
-    , runnerNamejwpp   :: Maybe Text
-    , jobNamejwpp      :: Text
-    , project_pathjwpp :: Text
-    } deriving (Eq, Show, Generic)
+data JobWithProjectPath = JobWithProjectPath Job Text
+    deriving (Eq, Show)
 
 -- | Fetch jobs and dump them in the job table
 stageJobs :: BS.ByteString -> TMVar Connection -> (UTCTime, UTCTime) -> URI -> IO ()
@@ -266,15 +260,7 @@ stageJobs key connVar dateRange projURL = do
                     -- FIXME: We already have the project url, so we should
                     -- already have the project path as well.
                     projectInfo <- liftIO $ fetchProject (GitLabToken key) (fromMaybe 0 (glbProjectId job))
-                    let jobWithProjectPath = JobWithProjectPath
-                                { jobIdjwpp = jobId job
-                                , createdAtjwpp = createdAt job
-                                , webUrljwpp = webUrl job
-                                , runnerIdjwpp = runnerId job
-                                , runnerNamejwpp = runnerName job
-                                , jobNamejwpp = jobName job
-                                , project_pathjwpp = project_path projectInfo
-                                }
+                    let jobWithProjectPath = JobWithProjectPath job (project_path projectInfo)
                     bracketDB "insert jobs" connVar $ \conn ->
                         execute conn "insert or ignore into job (job_id, job_date, web_url, runner_id, runner_name, job_name, project_path) values (?,?,?,?,?,?,?)" jobWithProjectPath
 

@@ -33,7 +33,7 @@ import GitLabApi
 import Spuriobot.Foundation
 import Spuriobot.RetryJob
 import qualified Spuriobot.DB as DB
-import Spuriobot.Backfill (Trace(..),JobWithProjectPath(..))
+import Spuriobot.Backfill (Trace(..),JobWithProjectPath(..), Job(..))
 
 --
 -- Helpers
@@ -195,15 +195,17 @@ insertLogtoFTS ev logs = do
         jobId = glbBuildId ev
     jobInfo <- liftIO $ fetchFinishedJob tok projectId jobId
     projInfo <- liftIO $ fetchProject tok projectId
+    -- FIXME
     let job = JobWithProjectPath
-            jobId
-            -- (T.pack . show $ glbBuildStatus ev)  -- Convert BuildStatus to Text
-            (maybe (Time.UTCTime undefined 0) gitLabTimeToUTC (glbFinishedAt ev)) -- Use glbFinishedAt from ev
-            (uriToText $ webUrl jobInfo)  -- Convert JobWebURI to Text
-            (runnerId jobInfo)
-            (runnerName jobInfo)
-            (jobName jobInfo)
-            (projPath projInfo)
+            (Job
+                jobId
+                (maybe (Time.UTCTime undefined 0) gitLabTimeToUTC (glbFinishedAt ev)) -- Use glbFinishedAt from ev
+                (uriToText $ webUrl jobInfo)  -- Convert JobWebURI to Text
+                (runnerId jobInfo)
+                (runnerName jobInfo)
+                (jobName jobInfo)
+                (Just $ unProjectId projectId))
+                (projPath projInfo)
 
     sqliteconnVar <- asks connVar
     liftIO $ DB.insertJobs [job] sqliteconnVar

@@ -53,10 +53,9 @@ insertFailures x conn = PG.executeMany conn
 
 -- | Function to insert batch of jobs to SQLite FTS database
 insertJobs :: Foldable f => f JobWithProjectPath -> TMVar SQLite.Connection -> IO ()
-insertJobs x connVar = do
-    let jobsToInsert = map (\(JobWithProjectPath a c d e f g h) -> (a, c, d, e, f, g, h)) (toList x)
+insertJobs x connVar =
     bracketDB "insert jobs" connVar $ \conn ->
-        SQLite.executeMany conn "insert into job (job_id, job_date, web_url, runner_id, runner_name, job_name, project_path) values (?,?,?,?,?,?,?)" jobsToInsert
+        SQLite.executeMany conn "insert into job (job_id, job_date, web_url, runner_id, runner_name, job_name, project_path) values (?,?,?,?,?,?,?)" (toList x)
 
 -- | Function to insert trace of job logs to FTS database
 insertJobTrace :: Foldable f => f Trace -> TMVar SQLite.Connection -> IO ()
