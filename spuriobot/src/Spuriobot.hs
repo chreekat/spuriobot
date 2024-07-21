@@ -107,7 +107,7 @@ main = do
             pool <- newPool (defaultPoolConfig DB.connect DB.close fiveMin reasonableDefault)
 
             chan <- RetryChan <$> newChan
-            scotty 3000 $ searchUIServer connVar
+            scotty 3000 $ searchUIServer connVar'
             race_
                 (runSpuriobot strApiToken pool chan connVar' retryService)
                 (run 8080 $ logStdout $ serve webhookAPI (mainServer strApiToken pool chan connVar'))
@@ -145,7 +145,7 @@ spurioServer = jobEvent :<|> systemEvent :<|> jobEvent
 mainServer :: GitLabToken -> Pool Database.PostgreSQL.Simple.Connection -> RetryChan -> TMVar SQLite.Connection -> Server WebHookAPI
 mainServer tok pool chan connVar' = hoistServer webhookAPI (nt tok pool chan connVar') spurioServer
   where
-    nt :: GitLabToken -> Pool Database.PostgreSQL.Simple.Connection -> RetryChan -> TMVar SQLite.Connection -> Spuriobot a -> Handler a
+    nt :: GitLabToken -> Pool Database.PostgreSQL.Simple.Connection -> RetryChan -> TMVar SQLite.Connection -> Spuriobot a -> Servant.Handler a
     nt t p c cv action = liftIO $ runSpuriobot t p c cv action
 
 -- | This turns the a request processor into a webhook endpoint by immediately

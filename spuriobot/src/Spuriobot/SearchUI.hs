@@ -22,7 +22,16 @@ import Data.Int (Int64)
 import Data.Time (UTCTime)
 import GHC.Generics (Generic)
 
-import GitLabJobs (JobWithProjectPath(..))
+-- Define JobInfo data type
+data JobInfo = JobInfo
+  { jobId :: Int64
+  , createdAt :: UTCTime
+  , webUrl :: Text
+  , runnerId :: Maybe Int64
+  , runnerName :: Maybe Text
+  , jobName :: Text
+  , projectPath :: Text
+  } deriving (Generic, Show)
 
 -- Define the Search API
 type SearchAPI = "search" :> QueryParam "keyword" Text :> Get '[PlainText] (Html ())
@@ -32,25 +41,25 @@ searchAPI :: Proxy SearchAPI
 searchAPI = Proxy
 
 -- HTML rendering function using Lucid
-renderJob :: JobWithProjectPath -> Html ()
+renderJob :: JobInfo -> Html ()
 renderJob job = 
   div_ $ do
-    h2_ $ toHtml (jobNamejwpp job)
+    h2_ $ toHtml (jobName job)
     p_ $ do
-      "Job Id: " >> toHtml (T.pack $ show (jobIdjwpp job))
+      "Job Id: " >> toHtml (T.pack $ show (jobId job))
       br_ []
-      "Date: " >> toHtml (T.pack $ formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S" (createdAtjwpp job))
+      "Date: " >> toHtml (T.pack $ formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S" (createdAt job))
       br_ []
-      "URL: " >> toHtml (webUrljwpp job)
+      "URL: " >> toHtml (webUrl job)
       br_ []
-      "Runner Id: " >> toHtml (maybe "N/A" (T.pack . show) (runnerIdjwpp job))
+      "Runner Id: " >> toHtml (maybe "N/A" (T.pack . show) (runnerId job))
       br_ []
-      "Runner Name: " >> toHtml (maybe "N/A" id (runnerNamejwpp job))
+      "Runner Name: " >> toHtml (maybe "N/A" id (runnerName job))
       br_ []
-      "Project Path: " >> toHtml (project_pathjwpp job)
+      "Project Path: " >> toHtml (projectPath job)
 
 -- HTML template for the search form and results
-renderPage :: Text -> [JobWithProjectPath] -> Bool -> Int -> Html ()
+renderPage :: Text -> [JobInfo] -> Bool -> Int -> Html ()
 renderPage keyword results hasNextPage nextPage = do
   doctype_
   html_ $ do
@@ -78,7 +87,7 @@ wrapKeyword :: Maybe Text -> Maybe Text
 wrapKeyword = fmap (\k -> "\"" <> k <> "\"")
 
 -- Database query to fetch job results based on the keyword
-searchJobs :: Connection -> Maybe Text -> Int -> Int -> IO ([JobWithProjectPath], Int)
+searchJobs :: Connection -> Maybe Text -> Int -> Int -> IO ([JobInfo], Int)
 searchJobs conn (Just keyword) limit offset = do
   let wrappedKeyword = wrapKeyword (Just keyword)
       countQry = "SELECT COUNT(*) FROM job WHERE job_id IN (SELECT rowid FROM job_trace WHERE trace MATCH ?);"
@@ -87,7 +96,7 @@ searchJobs conn (Just keyword) limit offset = do
                 \ORDER BY job_date DESC LIMIT ? OFFSET ?;"
   totalRows <- query conn countQry (Only wrappedKeyword)
   rows <- query conn dataQry (wrappedKeyword, limit, offset)
-  return (map (\(jid, jdate, url, rid, rname, jname, path) -> JobWithProjectPath jid jdate url rid rname jname path) rows, fromOnly (head totalRows))
+  return (map (\(jid, jdate, url, rid, rname, jname, path) -> JobInfo jid jdate url rid rname jname path) rows, fromOnly (head totalRows))
 
 searchJobs conn Nothing limit offset = do
   let countQry = "SELECT COUNT(*) FROM job;"
@@ -95,7 +104,7 @@ searchJobs conn Nothing limit offset = do
                 \FROM job ORDER BY job_date DESC LIMIT ? OFFSET ?;"
   totalRows <- query conn countQry (limit, offset)
   rows <- query conn dataQry (limit, offset)
-  return (map (\(jid, jdate, url, rid, rname, jname, path) -> JobWithProjectPath jid jdate url rid rname jname path) rows, fromOnly (head totalRows))
+  return (map (\(jid, jdate, url, rid, rname, jname, path) -> JobInfo jid jdate url rid rname jname path) rows, fromOnly (head totalRows))
 
 -- Scotty server for the search UI
 searchUIServer :: TMVar Connection -> ScottyM ()
