@@ -49,6 +49,9 @@ import Spuriobot.RetryJob
 import Spuriobot.Foundation
 import Spuriobot.Spurio
 import Spuriobot.Backfill (fetchJobsBetweenDates, initDatabase)
+import Spuriobot.SearchUI (searchUIServer)
+-- will remove scotty dependency in future
+import Web.Scotty
 
 
 -- | API served by this app
@@ -104,7 +107,7 @@ main = do
             pool <- newPool (defaultPoolConfig DB.connect DB.close fiveMin reasonableDefault)
 
             chan <- RetryChan <$> newChan
-
+            scotty 3000 $ searchUIServer connVar
             race_
                 (runSpuriobot strApiToken pool chan connVar' retryService)
                 (run 8080 $ logStdout $ serve webhookAPI (mainServer strApiToken pool chan connVar'))
