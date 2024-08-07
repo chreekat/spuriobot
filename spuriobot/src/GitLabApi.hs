@@ -35,6 +35,7 @@ import qualified Data.Aeson.Types as Aeson
 import qualified Data.Attoparsec.Text as AttoText
 import qualified Data.Attoparsec.Time as Atto
 import Data.Text (Text)
+import qualified Data.Text as T
 import Network.HTTP.Req (
     NoReqBody (..),
     ReqBodyJson (..),
@@ -349,21 +350,19 @@ instance FromJSON GitLabSystemEvent where
 newtype JobWebhook = JobWebhook Text
     deriving (Eq, Show)
 
--- FIXME: If the url has 'https', set enable_ssl_verification to true.
---
--- NB: push_events defaults to True
+-- | NB: push_events defaults to True, though this isn't documented.
 instance ToJSON JobWebhook where
     toJSON (JobWebhook url) = object
         [ "url" .= url
         , "job_events" .= True
         , "push_events" .= False
-        , "enable_ssl_verification" .= False
+        , "enable_ssl_verification" .= "https://" `T.isPrefixOf` url
         ]
     toEncoding (JobWebhook url) = pairs
         ("url" .= url
         <> "job_events" .= True
         <> "push_events" .= False
-        <> "enable_ssl_verification" .= False
+        <> "enable_ssl_verification" .= "https://" `T.isPrefixOf` url
         )
 
 -- | Add a build webhook to a project
