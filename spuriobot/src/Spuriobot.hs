@@ -163,7 +163,9 @@ processBuildEvent :: GitLabBuildEvent -> Spuriobot ()
 processBuildEvent ev = do
     case glbFinishedAt ev of
         Nothing -> trace "skipping unfinished job"
-        -- FIXME explain use of clearRetry here.
+        -- (A year later) Uh oh... I don't remember what the reason was for
+        -- 'clearRetry' here. Maybe it's to clear the retry counter for retried
+        -- jobs that succeeded.
         Just _ -> withTrace "finished" $ processFinishedJob ev `finally` clearRetry (glbBuildId ev)
 
 data SpuriobotException = ParseUrlFail

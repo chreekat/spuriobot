@@ -166,7 +166,9 @@ instance ToJSON BuildStatus where
 
 
 -- | Data from the /project API endpoint. Just used to store as metadata when
--- recording failures.
+-- recording failures. And for that matter, it's just used to store the project
+-- path. (GitlabBuildEvent has something called project_name, but that comes out
+-- as "Glasgow Haskell Compiler / head.hackage".
 newtype Project = Project
     { projPath :: Text
     } deriving (Eq, Show)
