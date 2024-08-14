@@ -50,7 +50,7 @@ import GitLabApi
 import Spuriobot.RetryJob
 import Spuriobot.Foundation
 import Spuriobot.Spurio
-import Spuriobot.Backfill (fetchJobsBetweenDates, initDatabase)
+import Spuriobot.Backfill (fetchJobsBetweenDates, initDatabase, insertLogtoFTS)
 import qualified Network.HTTP.Req as R
 import Network.HTTP.Req (https, headerRedacted, (/:), (/~))
 import Data.Maybe (fromJust)
