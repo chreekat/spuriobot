@@ -20,7 +20,7 @@ module Spuriobot.Foundation (
 ) where
 
 import Control.Concurrent.Classy (MonadConc)
-import Control.Monad.Catch (MonadThrow, MonadMask, MonadCatch)
+import Control.Monad.Catch (MonadThrow, MonadMask, MonadCatch, throwM)
 import Control.Monad.Trans (MonadIO, liftIO)
 import Control.Monad.Reader (ReaderT(..), MonadReader, withReaderT, asks)
 import Data.ByteString qualified as BS
@@ -34,6 +34,7 @@ import Control.Concurrent.STM (TMVar)
 import {-# SOURCE #-} Spuriobot.RetryJob (RetryChan)
 import GitLabApi (GitLabToken)
 import qualified Database.SQLite.Simple as SQLite
+import Network.HTTP.Req (MonadHttp(..))
 
 -- | Handler context (the Reader environment for the monad)
 data SpuriobotContext = SpuriobotContext
@@ -51,6 +52,9 @@ type TraceContext = Text
 -- The handler monad and its instances.
 newtype Spuriobot a = Spuriobot { unSpuriobot :: ReaderT SpuriobotContext IO a }
     deriving newtype (Functor, Applicative, Monad, MonadReader SpuriobotContext, MonadIO, MonadThrow, MonadCatch, MonadMask, MonadConc)
+
+instance MonadHttp Spuriobot where
+    handleHttpException = throwM
 
 -- | Spuriobot action that adds to the trace context.
 withTrace :: Text -> Spuriobot a -> Spuriobot a

@@ -3,7 +3,9 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE OverloadedStrings #-}
-
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE QuasiQuotes #-}
 {- |
 Module: Spuriobot
 Description: Log spurious GHC GitLab build failures
@@ -26,11 +28,11 @@ import Control.Concurrent.Classy (fork, getNumCapabilities)
 import Control.Concurrent.STM (newTMVarIO, TMVar)
 import Control.Exception (handle, throwIO)
 import Control.Monad (void)
-import Control.Monad.Catch ( Exception, finally )
+import Control.Monad.Catch ( Exception, finally, MonadThrow (..) )
 import Control.Monad.Reader (asks)
 import Data.Pool (Pool, newPool, defaultPoolConfig)
 import Data.Text (Text)
-import Data.Text.Encoding (encodeUtf8)
+import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import Data.Time (UTCTime, getCurrentTime, addUTCTime, nominalDay, parseTimeM, defaultTimeLocale)
 import Database.PostgreSQL.Simple (Connection)
 import Network.Wai.Handler.Warp (run)
@@ -38,7 +40,6 @@ import Network.Wai.Middleware.RequestLogger (logStdout)
 import Servant
 import System.Environment ( getArgs, getEnv,)
 import System.IO (hSetBuffering, stdout, BufferMode(..), hPutStrLn, stderr)
-import Text.URI (render)
 import qualified Data.Text as T
 import qualified Database.SQLite.Simple as SQLite
 
@@ -50,6 +51,9 @@ import Spuriobot.Spurio
 import Spuriobot.Backfill (fetchJobsBetweenDates, initDatabase)
 import Spuriobot.SearchUI (searchUIServer)
 import Web.Scotty
+import qualified Network.HTTP.Req as R
+import Network.HTTP.Req (https, headerRedacted, (/:), (/~))
+import Data.Maybe (fromJust)
 
 
 -- | API served by this app
@@ -152,11 +156,11 @@ mainServer tok pool chan connVar' = hoistServer webhookAPI (nt tok pool chan con
 -- See the recommendations from GitLab documentation:
 -- https://docs.gitlab.com/ee/user/project/integrations/webhooks.html#configure-your-webhook-receiver-endpoint
 mkHook
-    :: (req -> TraceContext) -- ^ Generate a trace context from the request
-    -> (req -> Spuriobot ()) -- ^ Process the request
-    -> req
+    :: (request -> TraceContext) -- ^ Generate a trace context from the request
+    -> (request -> Spuriobot ()) -- ^ Process the request
+    -> request
     -> Spuriobot ()
-mkHook ctx fn req = void $ fork $ withTrace (ctx req) $ fn req
+mkHook ctx fn rq = void $ fork $ withTrace (ctx rq) $ fn rq
 
 -- | Top-level handler for the GitLab job event
 -- https://docs.gitlab.com/ee/user/project/integrations/webhook_events.html#job-events
@@ -173,27 +177,88 @@ data SpuriobotException = ParseUrlFail
     deriving stock (Eq, Show)
     deriving anyclass (Exception)
 
-processFinishedJob :: GitLabBuildEvent -> Spuriobot ()
-processFinishedJob ev = do
-    logs <- fetchLogsForEvent ev
-    insertLogtoFTS ev logs
-    -- Handle specific job statuses
-    case glbBuildStatus ev of
-        OtherBuildStatus x -> trace x
-        Failed -> withTrace "failed" $ processFailure ev logs
+gitlab :: R.Url 'R.Https
+gitlab = https "gitlab.haskell.org" /: "api" /: "v4"
 
-fetchLogsForEvent :: GitLabBuildEvent -> Spuriobot Text
-fetchLogsForEvent ev = do
-    tok <- asks apiToken
-    let projectId = glbProjectId ev
-        jobId = glbBuildId ev
-    jobInfo <- liftIO $ fetchFinishedJob tok projectId jobId
-    l <- liftIO $ fetchJobLogs tok (webUrl jobInfo)
-    case l of
-        Left (JobWebUrlParseFailure url) -> do
-            trace $ "error: could not parse URL: " <> render url
-            liftIO $ throwIO ParseUrlFail
-        Right logs -> pure logs
+-- | Local definition of 'R.req' that runs in Spuriobot.
+-- Passes the gitlab root url to the second argument and provides the
+-- PRIVATE-TOKEN header automatically.
+req
+    :: (R.HttpBodyAllowed (R.AllowsBody method) (R.ProvidesBody body), R.HttpResponse a, R.HttpMethod method, R.HttpBody body)
+    => method
+    -> (R.Url 'R.Https -> R.Url scheme)
+    -> body
+    -> Proxy a
+    -> R.Option scheme
+    -> Spuriobot (R.HttpResponseBody a)
+req meth mkUrl body ty opts = do
+    GitLabToken tok <- asks apiToken
+    R.responseBody <$> R.req meth (mkUrl gitlab) body ty (headerRedacted "PRIVATE-TOKEN" tok <> opts)
+
+-- | Currently we have to make 3 separate requests to get all the data we need
+-- about a job.
+fetchFinishedJob :: ProjectId -> JobId -> Spuriobot FinishedJob
+fetchFinishedJob p@(ProjectId projId) jobId = do
+    job <- req R.GET (\f -> f /: "projects" /~ projId /: "jobs" /~ jobId) R.NoReqBody R.jsonResponse mempty
+    projInfo <- req R.GET (\f -> f /: "projects" /~ projId) R.NoReqBody R.jsonResponse mempty
+    logs <- fetchJobLogs (webUrl job)
+    pure FinishedJob
+        { finishedJobWebUrl = webUrl job
+        , finishedJobRunnerId = runnerId job
+        , finishedJobRunnerName = runnerName job
+        , finishedJobCreatedAt = jobCreatedAt job
+        , finishedJobFinishedAt = fromJust $ jobFinishedAt job
+        , finishedJobFailureReason = jobFailureReason job
+        , finishedJobName = jobName job
+        , finishedJobProjectId = p
+        , finishedJobProjectPath = projPath projInfo
+        , finishedJobLogs = logs
+        , finishedJobId = jobId
+        }
+
+-- | Once a job is finished, we need to add its logs to the FTS database, and we
+-- need to retry any spurious failure. The first step is to gather all the data
+-- we need about the job. In GitLab that means we need to fetch the logs and
+-- some project info separately.
+processFinishedJob :: GitLabBuildEvent -> Spuriobot ()
+processFinishedJob GitLabBuildEvent { glbProjectId, glbBuildId, glbBuildStatus } = do
+    finishedJob <- withTrace "fetch job" $ fetchFinishedJob glbProjectId glbBuildId
+    withTrace "insert to fts" $ insertLogtoFTS finishedJob
+    -- Handle specific job statuses
+    case glbBuildStatus of
+        OtherBuildStatus x -> trace x
+        Failed -> withTrace "failed" $ processFailure finishedJob
+
+-- | Get the raw job trace. The JobWebUrl may fail to parse, but we'll just kill
+-- the thread if so. Hm wait I log that, right?
+--
+-- This function uses the web UI rather than the actual GitLab JSON API. That's
+-- because the trace endpoint of the API is very slow.
+fetchJobLogs :: JobWebURI -> Spuriobot Text
+fetchJobLogs (JobWebURI jobURI) =
+    let url = R.useURI jobURI
+    in case url of
+        -- lol
+        Just (Left (url', opt)) -> fetch_job_raw url' opt
+        Just (Right (url', opt)) -> fetch_job_raw url' opt
+        Nothing -> throwM (JobWebUrlParseFailure jobURI)
+
+    where
+        fetch_job_raw url opt =
+            let raw_url = url /: "raw"
+            in do
+                -- TODO handle redirect to login which is gitlab's way of saying 404
+                -- if re.search('users/sign_in$', resp.url):
+                (GitLabToken tok) <- asks apiToken
+                response <-
+                    R.req
+                        R.GET
+                        raw_url
+                        R.NoReqBody
+                        R.bsResponse
+                        (opt <> headerRedacted "PRIVATE-TOKEN" tok)
+
+                pure . decodeUtf8 . R.responseBody $ response
 
 -- | Top-level handler for GitLab system events
 -- https://gitlab.haskell.org/help/administration/system_hooks
