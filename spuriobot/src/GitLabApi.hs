@@ -161,6 +161,25 @@ instance ToJSON BuildStatus where
 
 
 
+-- | This is a sort of god-object for processing of finished jobs. It mostly
+-- mirrors Job (which comes from the GitLab API), except we know jobFinishedAt
+-- is non-null, and we add logs and the missing data that comes from the Project API
+-- endpoint.
+data FinishedJob = FinishedJob
+    { finishedJobWebUrl :: JobWebURI
+    , finishedJobRunnerId :: Maybe Int64
+    , finishedJobRunnerName :: Maybe Text
+    -- ^ GitLab can "lose" runner info, so runner fields are 'Maybe'
+    , finishedJobFinishedAt :: UTCTime
+    , finishedJobFailureReason :: Maybe JobFailureReason
+    , finishedJobName :: Text
+    , finishedJobProjectPath :: Text
+    , finishedJobProjectId :: ProjectId
+    , finishedJobLogs :: Text
+    , finishedJobId :: JobId
+    , finishedJobCreatedAt :: UTCTime
+    }
+    deriving (Show, Eq)
 
 --------------------------
 -- * /project API endpoint
@@ -171,32 +190,16 @@ instance ToJSON BuildStatus where
 -- recording failures. And for that matter, it's just used to store the project
 -- path. (GitlabBuildEvent has something called project_name, but that comes out
 -- as "Glasgow Haskell Compiler / head.hackage".
-newtype Project = Project
+data Project = Project
     { projPath :: Text
+    , projId :: ProjectId
     } deriving (Eq, Show)
 
 instance FromJSON Project where
     parseJSON = withObject "Project" $ \o ->
         Project
             <$> o .: "path_with_namespace"
-
-fetchProject :: GitLabToken -> ProjectId -> IO Project
-fetchProject (GitLabToken tok) (ProjectId projectId) = do
-    fmap responseBody $ runReq defaultHttpConfig $
-        req
-            R.GET
-            ( https
-                "gitlab.haskell.org"
-                /: "api"
-                /: "v4"
-                /: "projects"
-                /~ projectId
-            )
-            NoReqBody
-            jsonResponse
-            (headerRedacted "PRIVATE-TOKEN" tok)
-
-
+            <*> o .: "id"
 
 -----------------------------
 -- * Job webhook
@@ -260,7 +263,7 @@ instance FromJSON RetryResult where
 -- | This name is dumb, but even worse would be to have the clashing names
 -- Spuriobot.RetryJob.retryJob and GitLabApi.retryJob. Sorry.
 retryJobApi :: GitLabToken -> ProjectId -> JobId -> IO JobId
-retryJobApi (GitLabToken tok) (ProjectId projectId) jobId =
+retryJobApi (GitLabToken tok) (ProjectId projectId) job =
     fmap (retryJobId . responseBody) $ runReq defaultHttpConfig $
         req
             R.POST
@@ -275,7 +278,7 @@ retryJobApi (GitLabToken tok) (ProjectId projectId) jobId =
                 /: "projects"
                 /~ projectId
                 /: "jobs"
-                /~ jobId
+                /~ job
                 /: "retry"
 
 
@@ -283,9 +286,11 @@ retryJobApi (GitLabToken tok) (ProjectId projectId) jobId =
 -- * /job/<job-id>/raw
 ----------------------
 
-newtype JobWebUrlParseFailure = JobWebUrlParseFailure URI
+newtype JobWebUrlParseFailure = JobWebUrlParseFailure URI deriving (Show)
 
-newtype JobWebURI = JobWebURI URI
+instance Exception JobWebUrlParseFailure
+
+newtype JobWebURI = JobWebURI { getJobWebURI :: URI }
     deriving (Eq, Show)
 
 instance FromJSON JobWebURI where
@@ -368,7 +373,7 @@ instance ToJSON JobWebhook where
 
 -- | Add a build webhook to a project
 addProjectBuildHook :: GitLabToken -> ProjectId -> Text -> IO ()
-addProjectBuildHook (GitLabToken tok) (ProjectId projId) hook =
+addProjectBuildHook (GitLabToken tok) (ProjectId proj) hook =
     fmap responseBody $ runReq defaultHttpConfig $
         req
             R.POST
@@ -383,5 +388,5 @@ addProjectBuildHook (GitLabToken tok) (ProjectId projId) hook =
                 /: "api"
                 /: "v4"
                 /: "projects"
-                /~ projId
+                /~ proj
                 /: "hooks"
