@@ -31,24 +31,26 @@ main = hspec $ do
         it "can read a job retry response" $ do
             eiDecoded <- eitherDecodeFileStrict' "testdata/retry-response.json" :: IO (Either String RetryResult)
             eiDecoded `shouldSatisfy` isRight
-        describe "Read FinishedJob" $ do
-            it "can read a FinishedJob" $ do
-                job <- eitherDecodeFileStrict' "testdata/jobinfo.json" :: IO (Either String FinishedJob)
+        describe "Read Job" $ do
+            it "can read a Job" $ do
+                job <- eitherDecodeFileStrict' "testdata/jobinfo.json" :: IO (Either String Job)
                 let url = JobWebURI (fromJust (mkURI "https://gitlab.haskell.org/ghc/ghc/-/jobs/1593505"))
                 job `shouldBe` Right
-                    (FinishedJob
+                    (Job
+                        1593505
                         url
                         (Just 142)
                         (Just "x86-64-win-2.zw3rk.com")
-                        (read "2023-07-07 17:30:53.227")
+                        (read "2023-07-07 11:37:37.576")
+                        (Just (read "2023-07-07 17:30:53.227"))
                         (Just (OtherReason "trace_size_exceeded"))
                         "x86_64-windows-validate")
             it "can read a job that failed with RunnerSystemFailure" $ do
-                job <- eitherDecodeFileStrict' "testdata/spurio-system_failure.json" :: IO (Either String FinishedJob)
+                job <- eitherDecodeFileStrict' "testdata/spurio-system_failure.json" :: IO (Either String Job)
                 jobFailureReason <$> job `shouldBe` Right (Just RunnerSystemFailure)
         it "can read a Project" $ do
             job <- eitherDecodeFileStrict' "testdata/project.json" :: IO (Either String Project)
-            job `shouldBe` Right (Project "ghc/ghc")
+            job `shouldBe` Right (Project "ghc/ghc" (ProjectId 1))
         describe "System events" $ do
             it "can read a project creation event" $ do
                 projCreated <- eitherDecodeFileStrict' "testdata/project-creation-event.json" :: IO (Either String GitLabSystemEvent)

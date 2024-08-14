@@ -102,34 +102,35 @@ type JobId = Int64
 
 
 
--- | The data we get from the /job API endpoint for finished jobs.
+-- | The data we get from the /job API endpoint.
 --
 -- Most of what we need could come from the BuildEvent, but the web_url in
 -- particular is missing, so it's not sufficient for our use.
 --
 -- Informally, we use BuildEvent to decide whether or not to check the job for
 -- failures, and the /job endpoint for everything else.
---
--- That the job is actually finished is not checked. However, by assuming it
--- *is* finished, we know that jobFinishedAt is guaranteed to exist.
-data FinishedJob = FinishedJob
-    { webUrl :: JobWebURI
+data Job = Job
+    { jobId :: JobId
+    , webUrl :: JobWebURI
     , runnerId :: Maybe Int64
     , runnerName :: Maybe Text
     -- ^ GitLab can "lose" runner info, so runner fields are 'Maybe'
-    , jobFinishedAt :: UTCTime
+    , jobCreatedAt :: UTCTime
+    , jobFinishedAt :: Maybe UTCTime
     , jobFailureReason :: Maybe JobFailureReason
     , jobName :: Text
     }
     deriving (Show, Eq)
 
-instance FromJSON FinishedJob where
-    parseJSON = withObject "FinishedJob" $ \o ->
-        FinishedJob
-            <$> o .: "web_url"
+instance FromJSON Job where
+    parseJSON = withObject "Job" $ \o ->
+        Job
+            <$> o .: "id"
+            <*> o .: "web_url"
             <*> (o .:? "runner" >>= maybe (pure Nothing) (.: "id"))
             <*> (o .:? "runner" >>= maybe (pure Nothing) (.: "description"))
-            <*> o .: "finished_at"
+            <*> o .: "created_at"
+            <*> o .:? "finished_at"
             <*> o .:? "failure_reason"
             <*> o .: "name"
 
