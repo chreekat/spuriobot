@@ -89,7 +89,7 @@ attoParseGitLabTime = fmap GitLabTime $ do
     _ <- AttoText.string " UTC"
     pure $ localTimeToUTC utc localtime
 
-newtype ProjectId = ProjectId {unProjectId :: Int}
+newtype ProjectId = ProjectId {unProjectId :: Int64}
     deriving stock (Show, Ord, Eq)
     deriving newtype (FromJSON, ToJSON)
 
