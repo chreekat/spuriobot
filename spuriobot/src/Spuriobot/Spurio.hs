@@ -13,27 +13,21 @@ module Spuriobot.Spurio (
     Jobbo(..),
     logFailures,
     processFailure,
-    insertLogtoFTS,
 ) where
 
-import Control.Monad.Trans (liftIO)
-import Control.Monad.Reader (asks)
 import Data.Maybe (mapMaybe)
 import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Text.Regex.TDFA as Regex
-import Data.Int (Int64)
 import Control.Monad
 import Text.URI (render)
-import qualified Data.Time.Clock as Time
 
 import GitLabApi
 import Spuriobot.Foundation
 import Spuriobot.RetryJob
 import qualified Spuriobot.DB as DB
-import Spuriobot.Backfill (Trace(..),JobWithProjectPath(..), Job(..))
 
 --
 -- Helpers
@@ -162,60 +156,24 @@ logFailures failures
         ( \(_, msg) -> Spuriobot.Foundation.trace msg)
 
 -- | Characteristics of a job that we test against.
+-- TODO: Get rid of this type, just use the FinishedJob god-object
 data Jobbo = Jobbo (Maybe JobFailureReason) Text
 
 -- | Given a failed job, deal with spurios (if any)
 processFailure
-    :: GitLabBuildEvent
-    -> Text -- ^ Job log
+    :: FinishedJob
     -> Spuriobot ()
-processFailure GitLabBuildEvent { glbProjectId, glbBuildId } logs = do
-    tok <- asks apiToken
-    jobInfo <- liftIO $ fetchFinishedJob tok glbProjectId glbBuildId
-    projInfo <- liftIO $ fetchProject tok glbProjectId
-    let jobbo = Jobbo (jobFailureReason jobInfo) logs
+processFailure finishedJob@(FinishedJob { finishedJobId, finishedJobProjectId }) = do
+    let jobbo = Jobbo (finishedJobFailureReason finishedJob) (finishedJobLogs finishedJob)
     let failures = collectFailures jobbo
     logFailures failures
-    void $ runDB $ DB.insertFailures (mkDBFailures glbBuildId jobInfo projInfo (S.toList failures))
+    void $ runDB $ DB.insertFailures (mkDBFailures finishedJob (S.toList failures))
     unless (S.null failures) $
-        withTrace "retrying" $ retryJob glbProjectId glbBuildId
-
--- Convert GitLabTime to UTCTime
-gitLabTimeToUTC :: GitLabTime -> Time.UTCTime
-gitLabTimeToUTC (GitLabTime t) = t
-
-uriToText :: JobWebURI -> Text
-uriToText (JobWebURI uri) = T.pack (show uri)
-
--- | This inserts the job metadata to job table in sql and log trace in job_trace table setting up FTS database
-insertLogtoFTS :: GitLabBuildEvent -> Text -> Spuriobot ()
-insertLogtoFTS ev logs = do
-    tok <- asks apiToken
-    let projectId = glbProjectId ev
-        jobId = glbBuildId ev
-    jobInfo <- liftIO $ fetchFinishedJob tok projectId jobId
-    projInfo <- liftIO $ fetchProject tok projectId
-    -- FIXME
-    let job = JobWithProjectPath
-            (Job
-                jobId
-                (maybe (Time.UTCTime undefined 0) gitLabTimeToUTC (glbFinishedAt ev)) -- Use glbFinishedAt from ev
-                (uriToText $ webUrl jobInfo)  -- Convert JobWebURI to Text
-                (runnerId jobInfo)
-                (runnerName jobInfo)
-                (jobName jobInfo)
-                (Just $ unProjectId projectId))
-                (projPath projInfo)
-
-    sqliteconnVar <- asks connVar
-    liftIO $ DB.insertJobs [job] sqliteconnVar
-    let jobTrace = Trace jobId logs
-    liftIO $ DB.insertJobTrace [jobTrace] sqliteconnVar
-
+        withTrace "retrying" $ retryJob finishedJobProjectId finishedJobId
 
 -- | Map between our types and the DB's types
-mkDBFailures :: Functor f => Int64 -> FinishedJob -> Project -> f Failure -> f DB.Failure
-mkDBFailures jobId FinishedJob { jobFinishedAt, webUrl, runnerId, runnerName, jobName } Project { projPath } fails =
-    let mk (code, _) = DB.Failure jobId code jobFinishedAt (render' webUrl) runnerId runnerName jobName projPath
+mkDBFailures :: Functor f => FinishedJob -> f Failure -> f DB.Failure
+mkDBFailures FinishedJob { finishedJobId, finishedJobFinishedAt, finishedJobWebUrl, finishedJobRunnerId, finishedJobRunnerName, finishedJobName, finishedJobProjectPath } fails =
+    let mk (code, _) = DB.Failure finishedJobId code finishedJobFinishedAt (render' finishedJobWebUrl) finishedJobRunnerId finishedJobRunnerName finishedJobName finishedJobProjectPath
         render' (JobWebURI uri) = render uri
     in fmap mk fails
