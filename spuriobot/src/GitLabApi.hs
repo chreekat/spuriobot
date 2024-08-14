@@ -35,6 +35,7 @@ import qualified Data.Aeson.Types as Aeson
 import qualified Data.Attoparsec.Text as AttoText
 import qualified Data.Attoparsec.Time as Atto
 import Data.Text (Text)
+import qualified Data.Text as T
 import Network.HTTP.Req (
     NoReqBody (..),
     ReqBodyJson (..),
