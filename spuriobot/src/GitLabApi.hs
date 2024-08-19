@@ -6,6 +6,7 @@
 -- Used for MonadConc:
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module GitLabApi (
     GitLabBuildEvent (..),
@@ -56,6 +57,7 @@ import Data.ByteString (ByteString)
 import Text.URI (mkURI, URI)
 import Control.Applicative ((<|>))
 import Control.Monad.Catch
+import Data.Aeson.Encoding (text)
 
 --
 -- GitLab API types and handlers
@@ -144,6 +146,18 @@ instance FromJSON JobFailureReason where
         f "runner_system_failure" = RunnerSystemFailure
         f x = OtherReason x
 
+-- | Used in the ToField instance
+instance ToJSON JobFailureReason where
+    toJSON JobTimeout = "job_execution_timeout"
+    toJSON JobStuck = "stuck_or_timeout_failure"
+    toJSON RunnerSystemFailure = "runner_system_failure"
+    toJSON (OtherReason x) = toJSON x
+
+    toEncoding JobTimeout = text "job_execution_timeout"
+    toEncoding JobStuck = text "stuck_or_timeout_failure"
+    toEncoding RunnerSystemFailure = text "runner_system_failure"
+    toEncoding (OtherReason x) = text x
+
 -- | The known build statuses that we care about.
 data BuildStatus = Failed | OtherBuildStatus Text
     deriving (Eq, Show)
@@ -178,6 +192,19 @@ data FinishedJob = FinishedJob
     , finishedJobCreatedAt :: UTCTime
     }
     deriving (Show, Eq)
+
+-- convert back to a job
+finishedJobToJob :: FinishedJob -> Job
+finishedJobToJob FinishedJob {..} = Job
+    { jobId = finishedJobId
+    , webUrl = finishedJobWebUrl
+    , runnerId = finishedJobRunnerId
+    , runnerName = finishedJobRunnerName
+    , jobCreatedAt = finishedJobCreatedAt
+    , jobFinishedAt = Just finishedJobFinishedAt
+    , jobFailureReason = finishedJobFailureReason
+    , jobName = finishedJobName
+    }
 
 --------------------------
 -- * /project API endpoint
