@@ -3,6 +3,7 @@
 -- For MonadConc
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE DataKinds #-}
 
 {-
  - Defines 'Spuriobot', the monad in which handlers run.
@@ -16,7 +17,8 @@ module Spuriobot.Foundation (
     trace,
     TraceContext,
     runDB,
-    runSpuriobot
+    runSpuriobot,
+    req,
 ) where
 
 import Control.Concurrent.Classy (MonadConc)
@@ -30,11 +32,13 @@ import Data.Text.Encoding (encodeUtf8)
 import Database.PostgreSQL.Simple (Connection)
 import Data.Pool (Pool, withResource)
 import Control.Concurrent.STM (TMVar)
+import qualified Network.HTTP.Req as R
 
 import {-# SOURCE #-} Spuriobot.RetryJob (RetryChan)
-import GitLabApi (GitLabToken)
+import GitLabApi (GitLabToken(..), gitlab)
 import qualified Database.SQLite.Simple as SQLite
 import Network.HTTP.Req (MonadHttp(..))
+import Data.Proxy (Proxy)
 
 -- | Handler context (the Reader environment for the monad)
 data SpuriobotContext = SpuriobotContext
@@ -79,3 +83,18 @@ runDB db_act =
 -- | Runner for 'Spuriobot' that initializes the Reader environment.
 runSpuriobot :: GitLabToken -> Pool Database.PostgreSQL.Simple.Connection -> RetryChan -> TMVar SQLite.Connection -> Spuriobot a -> IO a
 runSpuriobot tok pool chan conn (Spuriobot act) = runReaderT act (SpuriobotContext tok "" pool chan conn)
+
+-- | Local definition of 'R.req' that runs in Spuriobot.
+-- Passes the gitlab root url to the second argument and provides the
+-- PRIVATE-TOKEN header automatically.
+req
+    :: (R.HttpBodyAllowed (R.AllowsBody method) (R.ProvidesBody body), R.HttpResponse a, R.HttpMethod method, R.HttpBody body)
+    => method
+    -> (R.Url 'R.Https -> R.Url scheme)
+    -> body
+    -> Proxy a
+    -> R.Option scheme
+    -> Spuriobot a
+req meth mkUrl body ty opts = do
+    GitLabToken tok <- asks apiToken
+    R.req meth (mkUrl gitlab) body ty (R.headerRedacted "PRIVATE-TOKEN" tok <> opts)

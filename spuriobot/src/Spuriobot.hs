@@ -52,7 +52,7 @@ import Spuriobot.SearchUI (searchUIServer)
 import Web.Scotty
 import Spuriobot.Backfill (fetchJobsBetweenDates, initDatabase, insertLogtoFTS)
 import qualified Network.HTTP.Req as R
-import Network.HTTP.Req (https, headerRedacted, (/:), (/~))
+import Network.HTTP.Req (headerRedacted, (/:), (/~))
 import Data.Maybe (fromJust)
 
 
@@ -177,30 +177,12 @@ data SpuriobotException = ParseUrlFail
     deriving stock (Eq, Show)
     deriving anyclass (Exception)
 
-gitlab :: R.Url 'R.Https
-gitlab = https "gitlab.haskell.org" /: "api" /: "v4"
-
--- | Local definition of 'R.req' that runs in Spuriobot.
--- Passes the gitlab root url to the second argument and provides the
--- PRIVATE-TOKEN header automatically.
-req
-    :: (R.HttpBodyAllowed (R.AllowsBody method) (R.ProvidesBody body), R.HttpResponse a, R.HttpMethod method, R.HttpBody body)
-    => method
-    -> (R.Url 'R.Https -> R.Url scheme)
-    -> body
-    -> Proxy a
-    -> R.Option scheme
-    -> Spuriobot (R.HttpResponseBody a)
-req meth mkUrl body ty opts = do
-    GitLabToken tok <- asks apiToken
-    R.responseBody <$> R.req meth (mkUrl gitlab) body ty (headerRedacted "PRIVATE-TOKEN" tok <> opts)
-
 -- | Currently we have to make 3 separate requests to get all the data we need
 -- about a job.
 fetchFinishedJob :: ProjectId -> JobId -> Spuriobot FinishedJob
 fetchFinishedJob p@(ProjectId projId) jobId = do
-    job <- req R.GET (\f -> f /: "projects" /~ projId /: "jobs" /~ jobId) R.NoReqBody R.jsonResponse mempty
-    projInfo <- req R.GET (\f -> f /: "projects" /~ projId) R.NoReqBody R.jsonResponse mempty
+    job <- R.responseBody <$> req R.GET (\f -> f /: "projects" /~ projId /: "jobs" /~ jobId) R.NoReqBody R.jsonResponse mempty
+    projInfo <- R.responseBody <$> req R.GET (\f -> f /: "projects" /~ projId) R.NoReqBody R.jsonResponse mempty
     logs <- fetchJobLogs (webUrl job)
     pure FinishedJob
         { finishedJobWebUrl = webUrl job
