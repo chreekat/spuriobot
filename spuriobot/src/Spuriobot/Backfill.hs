@@ -6,6 +6,9 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 -- | Module for backfilling FTS database for all job logs till that point.
 module Spuriobot.Backfill (
@@ -13,8 +16,8 @@ module Spuriobot.Backfill (
     initDatabase,
     bracketDB,
     Trace(..),
-    JobWithProjectPath(..),
     Job(Job),
+    insertLogtoFTS,
 ) where
 
 import Data.Int (Int64)
@@ -54,58 +57,87 @@ import Network.HTTP.Req
       GET(GET),
       NoReqBody(NoReqBody) )
 import qualified Network.HTTP.Req as Req
-import Data.Aeson.Types (parseEither)
-import Control.Monad.Catch (MonadThrow)
 import Data.Proxy (Proxy)
 
-
-data Project = Project { name :: String, projectId :: Int } deriving (Eq, Show)
+import GitLabApi (Job(..), Project(..), ProjectId(..), JobWebURI(..), JobFailureReason, FinishedJob (..), finishedJobToJob)
+import Database.SQLite.Simple.FromField (FromField(..))
+import Data.Coerce (coerce)
+import Control.Monad.Catch (MonadThrow)
+import Spuriobot.Foundation (Spuriobot, connVar)
+import Control.Monad.Reader (asks)
+import Database.SQLite.Simple.ToField (ToField (..))
 
 -- | List of projects we care about.
 projects :: [Project]
 projects =
-    [ Project "ghc/ghc" 1
+    [ Project "ghc/ghc" (ProjectId 1)
     ]
 
--- | The elements of a GitLab REST API Job entity we care about
--- FIXME: We care about a ton of stuff, actually, so this should be greatly
--- expanded.
-data Job = Job
-    { jobId        :: Int64
-    , createdAt    :: UTCTime
-    , webUrl       :: Text
-    , runnerId     :: Maybe Int64
-    , runnerName   :: Maybe Text
-    , jobName      :: Text
-    , glbProjectId :: Maybe Int
-    } deriving (Eq, Show)
+-- Loose coupling wrapper.
+newtype FTSJob = FTSJob Job
+    deriving stock (Eq, Show)
 
-instance ToRow Job where
-    toRow (Job jobId createdAt webUrl runnerId runnerName jobName glbProjectId) =
-        toRow (jobId, createdAt, webUrl, runnerId, runnerName, jobName, glbProjectId)
+instance ToRow FTSJob where
+    toRow (FTSJob (Job {..})) =
+        toRow (jobId, coerce webUrl :: DBURI, runnerId, runnerName, jobCreatedAt, jobFinishedAt, coerce jobFailureReason :: Maybe DBJobFailureReason, jobName)
 
-instance FromRow Job where
-    fromRow = Job <$> field <*> field <*> field <*> field <*> field <*> field <*> field
+newtype DBURI = DBURI URI
 
-instance FromJSON Job where
-    parseJSON = withObject "Job" $ \v -> do
-        jobId <- v .: "id"
-        createdAt <- v .: "created_at"
-        webUrl <- v .: "web_url"
-        runnerId <- v .:? "runner" >>= maybe (pure Nothing) (.: "id")
-        runnerName <-  v .:? "runner" >>= maybe (pure Nothing) (.: "description")
-        jobName <- v .: "name"
-        pipeline <- v .:? "pipeline"
-        glbProjectId <- traverse (.: "project_id") pipeline
-        return Job {..}
+instance FromField DBURI where
+    fromField f = do
+        t <- fromField f
+        u <- mkURI t
+        pure $ DBURI u
 
+instance ToField DBURI where
+    toField (DBURI uri) = toField (render uri)
+
+toJobWebURI :: DBURI -> JobWebURI
+toJobWebURI = coerce
+
+newtype DBJobFailureReason = DBJobFailureReason JobFailureReason
+
+-- | Delegates to FromJSON
+instance FromField DBJobFailureReason where
+    fromField f = do
+        b <- fromField f
+        v <- throwDecode b
+        pure $ DBJobFailureReason v
+
+instance ToField DBJobFailureReason where
+    toField (DBJobFailureReason jfr) = toField (encode jfr)
+
+toJFR :: DBJobFailureReason -> JobFailureReason
+toJFR = coerce
+
+instance FromRow FTSJob where
+    fromRow = do
+        j <- Job
+            <$> field
+            <*> (toJobWebURI <$> field)
+            <*> field
+            <*> field
+            <*> field
+            <*> field
+            <*> (fmap toJFR <$> field)
+            <*> field
+        pure $ FTSJob j
+
+-- | Builds a URI to the jobs endpoint from a Project and an optional page
+-- number.
 jobsAPI :: Project -> Maybe Int -> URI
-jobsAPI (projectId -> i) page = fromJust $ mkURI $
+jobsAPI (projId -> i) page = fromJust $ mkURI $
     "https://gitlab.haskell.org/api/v4/projects/"
     <> T.pack (show i)
     <> "/jobs?scope%5B%5D=failed&scope%5b%5d=success&per_page=100"
     <> maybe "" (\p -> "&page=" <> T.pack (show p)) page
 
+-- | This deals with pagination. It returns the jobs fetched, but also encodes
+-- whether or not there still more left to fetch.
+--
+-- On review, 'TooYoung u' has the same data and effect as 'WithMore u []', and
+-- could theoretically be dropped. But that could be confusing, so I'm keeping
+-- it.
 data JobsResult
     = WithMore URI [Job]
     | NoMore [Job]
@@ -129,8 +161,8 @@ fetchJobs key (minDate, maxDate) jobUrl = do
 
     let (msg, res) = f jobs' nextLink
         -- Check if we're still in the age range
-        tooYoung j = createdAt j > maxDate
-        tooOld j = createdAt j < minDate
+        tooYoung j = jobCreatedAt j > maxDate
+        tooOld j = jobCreatedAt j < minDate
         f jobs link | all tooYoung jobs = ("Too young", TooYoung link)
                     | all tooOld jobs = ("Too old", NoMore jobs)
                     | otherwise = ("Found jobs", WithMore link jobs)
@@ -170,10 +202,10 @@ reqq
 reqq method url body resp opts = liftIO $ runReq defaultHttpConfig (req method url body resp opts)
 
 -- | Get the trace for a job
-getTrace :: MonadIO m =>  BS.ByteString -> Job -> m Trace
-getTrace key j = do
+getTrace :: MonadIO m =>  BS.ByteString -> FTSJob -> m Trace
+getTrace key (FTSJob j) = do
     logg $ "GET TRACE " <> bstr (show (jobId j))
-    let (u,o) = fromMaybe (error "Bad URI parse") (useHttpsURI =<< mkURI (webUrl j))
+    let (u,o) = fromMaybe (error "Bad URI parse") (useHttpsURI . getJobWebURI . webUrl $ j)
     resp <- reqq GET (u /: "raw") NoReqBody bsResponse (o <> header "PRIVATE-TOKEN" key)
     pure $ Trace
         (jobId j)
@@ -184,7 +216,7 @@ bstr = T.encodeUtf8 . T.pack
 
 -- | Move a staged job into the actual job table. Fetch and store its trace as
 -- well. Ignore duplicates.
-insertJob :: MonadIO m => BS.ByteString -> TMVar Connection -> Job -> m ()
+insertJob :: MonadIO m => BS.ByteString -> TMVar Connection -> FTSJob -> m ()
 insertJob key connVar job = do
     t <- getTrace key job
     bracketDB "insert trace" connVar $ \conn ->
