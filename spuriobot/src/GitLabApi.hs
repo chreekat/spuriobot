@@ -26,7 +26,9 @@ module GitLabApi (
     ProjectEventType(..),
     JobWebhook(..),
     addProjectBuildHook,
-    JobWebURI(..)
+    JobWebURI(..),
+    gitlab,
+    finishedJobToJob
 ) where
 
 import Data.Aeson
@@ -365,3 +367,6 @@ addProjectBuildHook (GitLabToken tok) (ProjectId proj) hook =
                 /: "projects"
                 /~ proj
                 /: "hooks"
+
+gitlab :: R.Url 'R.Https
+gitlab = R.https "gitlab.haskell.org" /: "api" /: "v4"

@@ -51,9 +51,6 @@ import Network.HTTP.Req
       responseLinks,
       runReq,
       useHttpsURI,
-      https,
-      (/~),
-    --   headerRedacted,
       GET(GET),
       NoReqBody(NoReqBody) )
 import qualified Network.HTTP.Req as Req
@@ -231,36 +228,6 @@ bracketDB msg v
     = liftIO
     . bracket (do c <- atomically (takeTMVar v); logg ("OPEN " <> msg); pure c) (\c -> logg ("CLOSE " <> msg) >> atomically (putTMVar v c))
 
-newtype GitLabToken = GitLabToken BS.ByteString
-
-newtype ProjectInfo = ProjectInfo
-    { project_path :: T.Text
-    } deriving (Eq, Show)
-
-instance FromJSON ProjectInfo where
-    parseJSON = withObject "ProjectInfo" $ \v -> ProjectInfo
-        <$> v .: "path"
-
-fetchProject :: GitLabToken -> Int -> IO ProjectInfo
-fetchProject (GitLabToken tok) projectId = do
-    resp <- runReq defaultHttpConfig $ do
-        req GET
-            (https "gitlab.haskell.org" /: "api" /: "v4" /: "projects" /~ projectId)
-            NoReqBody
-            jsonResponse
-            (header "PRIVATE-TOKEN" tok)
-    case parseEither parseJSON (responseBody resp) of
-        Left err -> error $ "Failed to decode project JSON: " ++ show err
-        Right proj -> return proj
-
-instance ToRow JobWithProjectPath where
-    toRow (JobWithProjectPath j p) = toRow (j :. Only p)
-
-instance FromRow JobWithProjectPath where
-    fromRow = do
-        j :. Only p <- fromRow
-        pure $ JobWithProjectPath j p
-
 -- | Concurrently insert all staged jobs.
 clearStagedJobs :: BS.ByteString -> TMVar Connection -> ParIO ()
 clearStagedJobs key connVar = do
@@ -276,25 +243,17 @@ clearStagedJobs key connVar = do
     logg ("CLEAR " <> bstr (show (length jobs)) <> " JOBS")
     void $ parMapM (insertJob key connVar) jobs
 
-data JobWithProjectPath = JobWithProjectPath Job Text
-    deriving (Eq, Show)
-
 -- | Fetch jobs and dump them in the job table
 stageJobs :: BS.ByteString -> TMVar Connection -> (UTCTime, UTCTime) -> URI -> IO ()
 stageJobs key connVar dateRange projURL = do
     logg "Staging jobs"
     runListT $ do
         j <- getJobs key dateRange projURL connVar
-        case j of
-            [] -> pure ()
-            jobs -> do
-                forM_ jobs $ \job -> do
-                    -- FIXME: We already have the project url, so we should
-                    -- already have the project path as well.
-                    projectInfo <- liftIO $ fetchProject (GitLabToken key) (fromMaybe 0 (glbProjectId job))
-                    let jobWithProjectPath = JobWithProjectPath job (project_path projectInfo)
-                    bracketDB "insert jobs" connVar $ \conn ->
-                        execute conn "insert or ignore into job (job_id, job_date, web_url, runner_id, runner_name, job_name, project_path) values (?,?,?,?,?,?,?)" jobWithProjectPath
+        bracketDB "insert jobs" connVar $ \conn ->
+            executeMany conn jobInsertString (map FTSJob j)
+
+jobInsertString :: Query
+jobInsertString = "insert or ignore into job (job_id, job_date, web_url, runner_id, runner_name, job_name, project_path) values (?,?,?,?,?,?,?)"
 
 -- | Initialize the database
 initDatabase :: MonadIO m => TMVar Connection -> m ()
@@ -326,3 +285,10 @@ fetchJobsBetweenDates dateRange = do
         stageJobs key connVar dateRange (jobsAPI proj Nothing)
     runParIO (clearStagedJobs key connVar)
 
+-- | This inserts the job metadata to job table in sql and log trace in job_trace table setting up FTS database
+insertLogtoFTS :: FinishedJob -> Spuriobot ()
+insertLogtoFTS f@FinishedJob { .. } = do
+    sqliteconnVar <- asks connVar
+    void $ liftIO $ bracketDB "insert job" sqliteconnVar $ \conn -> do
+        execute conn jobInsertString (FTSJob (finishedJobToJob f))
+        execute conn "insert into job_trace (rowid, trace) values (?, ?)" (finishedJobId, finishedJobLogs)
