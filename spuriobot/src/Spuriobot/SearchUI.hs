@@ -110,12 +110,17 @@ searchJobs conn Nothing limit offset = do
 searchUIServer :: TMVar Connection -> ScottyM ()
 searchUIServer connVar = do
   get "/search" $ do
+    -- Get the keyword parameter, default to an empty string if not provided
     mKeyword <- param "keyword" `rescue` (\(_ :: ScottyException) -> return "")
     page <- param "page" `rescue` (\(_ :: ScottyException) -> return 1)
-    let keyword = if T.null mKeyword then Nothing else Just mKeyword
+    
+    -- Ensure the keyword is always a Text value, even if empty
+    let keyword = if T.null mKeyword then "" else mKeyword
         pageSize = 50
         offset = (page - 1) * pageSize
+        
     conn <- liftIO $ atomically $ readTMVar connVar
-    (jobs, totalCount) <- liftIO $ searchJobs conn keyword pageSize offset
+    (jobs, totalCount) <- liftIO $ searchJobs conn (Just keyword) pageSize offset
     let hasNextPage = totalCount > offset + pageSize
-    html $ renderText $ renderPage (maybe "" id keyword) jobs hasNextPage (page + 1)
+    html $ renderText $ renderPage keyword jobs hasNextPage (page + 1)
+
