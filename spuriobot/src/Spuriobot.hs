@@ -2,6 +2,8 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE OverloadedStrings #-}
+
 {- |
 Module: Spuriobot
 Description: Log spurious GHC GitLab build failures
@@ -41,8 +43,6 @@ import Text.URI (render)
 import qualified Data.Text as T
 import qualified Database.SQLite.Simple as SQLite
 
-
-
 import qualified Spuriobot.DB as DB
 import GitLabApi
 import Spuriobot.RetryJob
@@ -50,7 +50,6 @@ import Spuriobot.Foundation
 import Spuriobot.Spurio
 import Spuriobot.Backfill (fetchJobsBetweenDates, initDatabase)
 import Spuriobot.SearchUI (searchUIServer)
--- will remove scotty dependency in future
 import Web.Scotty
 
 
