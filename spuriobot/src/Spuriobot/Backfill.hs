@@ -233,9 +233,15 @@ instance FromRow JobWithProjectPath where
 clearStagedJobs :: BS.ByteString -> TMVar Connection -> ParIO ()
 clearStagedJobs key connVar = do
     logg "Clearing staged jobs"
-    jobs <- bracketDB "jobs with no traces" connVar
+    {-
+        inserting 0 as project_path because the table stores porject_path in its 
+        7th column which has datatype of Text but the Job datatype expects project_id
+        in its 7th feild which is of type Int. However, since this field is inconsequential
+        for collecting logs, we are filling this field with placeholder value - 0
+    -}
+    jobs :: [Job] <- bracketDB "jobs with no traces" connVar
         $ \conn -> query_ conn [sql|
-            select j.job_id, j.job_date, j.web_url, j.runner_id, j.runner_name, j.job_name, j.project_path
+            select j.job_id, j.job_date, j.web_url, j.runner_id, j.runner_name, j.job_name, 0 as project_path
             from job j
             left join job_trace t
             on j.job_id = t.rowid
@@ -261,9 +267,15 @@ stageJobs key connVar dateRange projURL = do
                     -- already have the project path as well.
                     projectInfo <- liftIO $ fetchProject (GitLabToken key) (fromMaybe 0 (glbProjectId job))
                     let jobWithProjectPath = JobWithProjectPath job (project_path projectInfo)
-                    bracketDB "insert jobs" connVar $ \conn ->
-                        execute conn "insert or ignore into job (job_id, job_date, web_url, runner_id, runner_name, job_name, project_path) values (?,?,?,?,?,?,?)" jobWithProjectPath
 
+                    -- Destructure JobWithProjectPath and then Job
+                    let JobWithProjectPath job projectPath = jobWithProjectPath
+                    let Job jobId jobDate webUrl runnerId runnerName jobName _ = job
+
+                    -- Execute SQL query with the selected fields
+                    bracketDB "insert jobs" connVar $ \conn ->
+                        execute conn "insert or ignore into job (job_id, job_date, web_url, runner_id, runner_name, job_name, project_path) values (?,?,?,?,?,?,?)"
+                            (jobId, jobDate, webUrl, runnerId, runnerName, jobName, projectPath)
 -- | Initialize the database
 initDatabase :: MonadIO m => TMVar Connection -> m ()
 initDatabase connVar = do
