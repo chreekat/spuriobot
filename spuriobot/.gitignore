@@ -4,3 +4,4 @@ result
 .nix-profiles
 .postgres-work
 jobs.db
+.DS_Store
