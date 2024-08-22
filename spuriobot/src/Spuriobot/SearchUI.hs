@@ -43,14 +43,14 @@ searchAPI = Proxy
 -- HTML rendering function using Lucid
 renderJob :: JobInfo -> Html ()
 renderJob job = 
-  div_ $ do
-    h2_ $ toHtml (jobName job)
-    p_ $ do
+  div_ [class_ "p-4 bg-white rounded-lg shadow-md mb-4"] $ do
+    h2_ [class_ "text-xl font-semibold text-gray-800"] $ toHtml (jobName job)
+    p_ [class_ "text-gray-600"] $ do
       "Job Id: " >> toHtml (T.pack $ show (jobId job))
       br_ []
       "Date: " >> toHtml (T.pack $ formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S" (createdAt job))
       br_ []
-      "URL: " >> toHtml (webUrl job)
+      "URL: " >> a_ [href_ (webUrl job), class_ "text-blue-500 hover:underline"] (toHtml (webUrl job))
       br_ []
       "Runner Id: " >> toHtml (maybe "N/A" (T.pack . show) (runnerId job))
       br_ []
@@ -62,25 +62,29 @@ renderJob job =
 renderPage :: Text -> [JobInfo] -> Bool -> Int -> Html ()
 renderPage keyword results hasNextPage nextPage = do
   doctype_
-  html_ $ do
+  html_ [lang_ "en"] $ do
     head_ $ do
       title_ "Job Search"
+      link_ [rel_ "stylesheet", href_ "https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"]
       script_ $ "function nextPage(page) { window.location.href = '/search?page=' + page + '&keyword=' + '" <> keyword <> "'; }"
-    body_ $ do
-      h1_ "Job Search"
-      form_ [method_ "get"] $ do
-        input_ [type_ "hidden", name_ "page", value_ "1"]
-        input_ [type_ "text", name_ "keyword", value_ keyword]
-        button_ [type_ "submit"] "Search"
-      hr_ []
-      if null results
-        then p_ "No results found."
-        else do
-          mapM_ renderJob results
-          when (nextPage > 2) $ -- Previous Page button should not be on the first page
-            button_ [onclick_ $ "nextPage(" <> T.pack (show (nextPage - 2)) <> ")"] "Previous Page"
-          when hasNextPage $
-            button_ [onclick_ $ "nextPage(" <> T.pack (show nextPage) <> ")"] "Next Page"
+    body_ [class_ "bg-gray-100 text-gray-900"] $ do
+      div_ [class_ "max-w-7xl mx-auto p-4"] $ do
+        h1_ [class_ "text-3xl font-bold mb-4"] "Job Search"
+        form_ [method_ "get", class_ "mb-6"] $ do
+          input_ [type_ "hidden", name_ "page", value_ "1"]
+          input_ [type_ "text", name_ "keyword", value_ keyword, class_ "p-2 border border-gray-300 rounded-lg w-full"]
+          button_ [type_ "submit", class_ "mt-2 p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"] "Search"
+        hr_ [class_ "my-4"]
+        if null results
+          then p_ [class_ "text-gray-700"] "No results found."
+          else do
+            div_ [class_ "space-y-4"] $
+              mapM_ renderJob results
+            div_ [class_ "flex justify-between mt-6"] $ do
+              when (nextPage > 2) $
+                button_ [onclick_ $ "nextPage(" <> T.pack (show (nextPage - 2)) <> ")", class_ "p-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"] "Previous Page"
+              when hasNextPage $
+                button_ [onclick_ $ "nextPage(" <> T.pack (show nextPage) <> ")", class_ "p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"] "Next Page"
 
 -- Function to wrap the keyword in quotes
 wrapKeyword :: Maybe Text -> Maybe Text
