@@ -33,6 +33,10 @@ data JobInfo = JobInfo
   , projectPath :: Text
   } deriving (Generic, Show)
 
+-- Define the SearchResults data type
+data SearchResults a = NoSearch | SearchResults [a]
+  deriving (Show, Generic)
+
 -- Define the Search API
 type SearchAPI = "search" :> QueryParam "keyword" Text :> Get '[PlainText] (Html ())
 
@@ -59,8 +63,8 @@ renderJob job =
       "Project Path: " >> toHtml (projectPath job)
 
 -- HTML template for the search form and results
-renderPage :: Text -> [JobInfo] -> Bool -> Int -> Html ()
-renderPage keyword results hasNextPage nextPage = do
+renderPage :: Text -> SearchResults JobInfo -> Bool -> Int -> Html ()
+renderPage keyword results' hasNextPage nextPage = do
   doctype_
   html_ [lang_ "en"] $ do
     head_ $ do
@@ -74,9 +78,11 @@ renderPage keyword results hasNextPage nextPage = do
           input_ [type_ "text", name_ "keyword", value_ keyword, class_ "p-2 border border-gray-300 rounded-lg w-full"]
           button_ [type_ "submit", class_ "mt-2 p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"] "Search"
         hr_ [class_ "my-4"]
-        if null results
-          then p_ [class_ "text-gray-700"] "No results found."
-          else do
+
+        case results' of
+          NoSearch -> pure ()  -- Don't show anything if no search has been made
+          SearchResults [] -> p_ [class_ "text-gray-700"] "No results found."
+          SearchResults results -> do
             div_ [class_ "space-y-4"] $
               mapM_ renderJob results
             div_ [class_ "flex justify-between mt-6"] $ do
@@ -111,7 +117,7 @@ searchJobs conn Nothing limit offset = do
   let countQry = "SELECT COUNT(*) FROM job;"
       dataQry = "SELECT job_id, job_date, web_url, runner_id, runner_name, job_name, project_path \
                 \FROM job ORDER BY job_date DESC LIMIT ? OFFSET ?;"
-  totalRows <- query conn countQry (limit, offset)
+  totalRows <- query conn countQry ()
   rows <- query conn dataQry (limit, offset)
   return (map (\(jid, jdate, url, rid, rname, jname, path) -> JobInfo jid jdate url rid rname jname path) rows, fromOnly (head totalRows))
 
@@ -122,13 +128,23 @@ searchUIServer connVar = do
     -- Get the keyword parameter, default to an empty string if not provided
     mKeyword <- param "keyword" `rescue` (\(_ :: ScottyException) -> return "")
     page <- param "page" `rescue` (\(_ :: ScottyException) -> return 1)
-    
+
     -- Ensure the keyword is always a Text value, even if empty
     let keyword = if T.null mKeyword then "" else mKeyword
         pageSize = 50
         offset = (page - 1) * pageSize
-        
+
     conn <- liftIO $ atomically $ readTMVar connVar
-    (jobs, totalCount) <- liftIO $ searchJobs conn (Just keyword) pageSize offset
-    let hasNextPage = totalCount > offset + pageSize
-    html $ renderText $ renderPage keyword jobs hasNextPage (page + 1)
+
+    -- If keyword is empty, no search has been performed
+    results' <- if T.null keyword
+      then return NoSearch
+      else do
+        (jobs, totalCount) <- liftIO $ searchJobs conn (Just keyword) pageSize offset
+        return $ SearchResults jobs
+
+    let hasNextPage = case results' of
+                        SearchResults jobs -> length jobs == pageSize
+                        _ -> False
+
+    html $ renderText $ renderPage keyword results' hasNextPage (page + 1)
