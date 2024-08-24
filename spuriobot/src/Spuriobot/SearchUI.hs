@@ -114,14 +114,7 @@ searchJobs conn (Just keyword) limit offset = do
   let jobs = map (\(jid, jdate, url, rid, rname, jname, path) -> JobInfo jid jdate url rid rname jname path) rows
   return (SearchResults jobs, fromOnly (head totalRows))
 
-searchJobs conn Nothing limit offset = do
-  let countQry = "SELECT COUNT(*) FROM job;"
-      dataQry = "SELECT job_id, job_date, web_url, runner_id, runner_name, job_name, project_path \
-                \FROM job ORDER BY job_date DESC LIMIT ? OFFSET ?;"
-  totalRows <- query conn countQry ()
-  rows <- query conn dataQry (limit, offset)
-  let jobs = map (\(jid, jdate, url, rid, rname, jname, path) -> JobInfo jid jdate url rid rname jname path) rows
-  return (SearchResults jobs, fromOnly (head totalRows))
+searchJobs _ Nothing _ _ = return (NoSearch, 0)
 
 -- Scotty server for the search UI
 searchUIServer :: TMVar Connection -> ScottyM ()
