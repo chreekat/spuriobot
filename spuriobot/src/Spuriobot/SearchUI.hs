@@ -46,13 +46,13 @@ renderJob job =
   div_ [class_ "p-4 bg-white rounded-lg shadow-md mb-4"] $ do
     h2_ [class_ "text-xl font-semibold text-gray-800"] $ toHtml (jobName job)
     p_ [class_ "text-gray-600"] $ do
-      "Job Id: " >> toHtml (T.pack $ show (jobId job))
+      "Job Id: " >> toHtml (show (jobId job))
       br_ []
-      "Date: " >> toHtml (T.pack $ formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S" (createdAt job))
+      "Date: " >> toHtml (formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S" (createdAt job))
       br_ []
       "URL: " >> a_ [href_ (webUrl job), class_ "text-blue-500 hover:underline"] (toHtml (webUrl job))
       br_ []
-      "Runner Id: " >> toHtml (maybe "N/A" (T.pack . show) (runnerId job))
+      "Runner Id: " >> toHtml (maybe "N/A" show (runnerId job))
       br_ []
       "Runner Name: " >> toHtml (maybe "N/A" id (runnerName job))
       br_ []
@@ -127,4 +127,3 @@ searchUIServer connVar = do
     (jobs, totalCount) <- liftIO $ searchJobs conn (Just keyword) pageSize offset
     let hasNextPage = totalCount > offset + pageSize
     html $ renderText $ renderPage keyword jobs hasNextPage (page + 1)
-
