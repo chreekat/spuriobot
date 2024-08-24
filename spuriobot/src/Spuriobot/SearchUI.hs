@@ -38,7 +38,7 @@ data SearchResults a = NoSearch | SearchResults [a]
   deriving (Show, Generic)
 
 -- Define the Search API
-type SearchAPI = "search" :> QueryParam "keyword" Text :> Get '[PlainText] (Html ())
+type SearchAPI = "search" :> QueryParam "q" Text :> Get '[PlainText] (Html ())
 
 -- Create a Proxy for the Search API
 searchAPI :: Proxy SearchAPI
@@ -75,7 +75,7 @@ renderPage keyword results' hasNextPage nextPage = do
         h1_ [class_ "text-3xl font-bold mb-4"] "Job Search"
         form_ [method_ "get", class_ "mb-6"] $ do
           input_ [type_ "hidden", name_ "page", value_ "1"]
-          input_ [type_ "text", name_ "keyword", value_ keyword, class_ "p-2 border border-gray-300 rounded-lg w-full"]
+          input_ [type_ "text", name_ "q", value_ keyword, class_ "p-2 border border-gray-300 rounded-lg w-full"]
           button_ [type_ "submit", class_ "mt-2 p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"] "Search"
         hr_ [class_ "my-4"]
 
@@ -89,12 +89,12 @@ renderPage keyword results' hasNextPage nextPage = do
               when (nextPage > 2) $
                 form_ [method_ "get", class_ "inline"] $ do
                   input_ [type_ "hidden", name_ "page", value_ (T.pack (show (nextPage - 2)))]
-                  input_ [type_ "hidden", name_ "keyword", value_ keyword]
+                  input_ [type_ "hidden", name_ "q", value_ keyword]
                   button_ [type_ "submit", class_ "p-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"] "Previous Page"
               when hasNextPage $
                 form_ [method_ "get", class_ "inline"] $ do
                   input_ [type_ "hidden", name_ "page", value_ (T.pack (show nextPage))]
-                  input_ [type_ "hidden", name_ "keyword", value_ keyword]
+                  input_ [type_ "hidden", name_ "q", value_ keyword]
                   button_ [type_ "submit", class_ "p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"] "Next Page"
 
 -- Function to wrap the keyword in quotes
@@ -120,8 +120,8 @@ searchJobs _ Nothing _ _ = return (NoSearch, 0)
 searchUIServer :: TMVar Connection -> ScottyM ()
 searchUIServer connVar = do
   get "/" $ do
-    -- Get the keyword parameter, default to an empty string if not provided
-    mKeyword <- param "keyword" `rescue` (\(_ :: ScottyException) -> return "")
+    -- Get the query parameter "q", default to an empty string if not provided
+    mKeyword <- param "q" `rescue` (\(_ :: ScottyException) -> return "")
     page <- param "page" `rescue` (\(_ :: ScottyException) -> return 1)
 
     -- Ensure the keyword is always a Text value, even if empty
