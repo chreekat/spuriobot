@@ -126,7 +126,7 @@ searchJobs conn Nothing limit offset = do
 -- Scotty server for the search UI
 searchUIServer :: TMVar Connection -> ScottyM ()
 searchUIServer connVar = do
-  get "/search" $ do
+  get "/" $ do
     -- Get the keyword parameter, default to an empty string if not provided
     mKeyword <- param "keyword" `rescue` (\(_ :: ScottyException) -> return "")
     page <- param "page" `rescue` (\(_ :: ScottyException) -> return 1)
