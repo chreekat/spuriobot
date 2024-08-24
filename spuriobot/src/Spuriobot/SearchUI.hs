@@ -66,7 +66,6 @@ renderPage keyword results hasNextPage nextPage = do
     head_ $ do
       title_ "Job Search"
       link_ [rel_ "stylesheet", href_ "https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"]
-      script_ $ "function nextPage(page) { window.location.href = '/search?page=' + page + '&keyword=' + '" <> keyword <> "'; }"
     body_ [class_ "bg-gray-100 text-gray-900"] $ do
       div_ [class_ "max-w-7xl mx-auto p-4"] $ do
         h1_ [class_ "text-3xl font-bold mb-4"] "Job Search"
@@ -82,9 +81,15 @@ renderPage keyword results hasNextPage nextPage = do
               mapM_ renderJob results
             div_ [class_ "flex justify-between mt-6"] $ do
               when (nextPage > 2) $
-                button_ [onclick_ $ "nextPage(" <> T.pack (show (nextPage - 2)) <> ")", class_ "p-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"] "Previous Page"
+                form_ [method_ "get", class_ "inline"] $ do
+                  input_ [type_ "hidden", name_ "page", value_ (T.pack (show (nextPage - 2)))]
+                  input_ [type_ "hidden", name_ "keyword", value_ keyword]
+                  button_ [type_ "submit", class_ "p-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"] "Previous Page"
               when hasNextPage $
-                button_ [onclick_ $ "nextPage(" <> T.pack (show nextPage) <> ")", class_ "p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"] "Next Page"
+                form_ [method_ "get", class_ "inline"] $ do
+                  input_ [type_ "hidden", name_ "page", value_ (T.pack (show nextPage))]
+                  input_ [type_ "hidden", name_ "keyword", value_ keyword]
+                  button_ [type_ "submit", class_ "p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"] "Next Page"
 
 -- Function to wrap the keyword in quotes
 wrapKeyword :: Maybe Text -> Maybe Text
