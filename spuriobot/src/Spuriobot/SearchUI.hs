@@ -102,7 +102,7 @@ wrapKeyword :: Maybe Text -> Maybe Text
 wrapKeyword = fmap (\k -> "\"" <> k <> "\"")
 
 -- Database query to fetch job results based on the keyword
-searchJobs :: Connection -> Maybe Text -> Int -> Int -> IO ([JobInfo], Int)
+searchJobs :: Connection -> Maybe Text -> Int -> Int -> IO (SearchResults JobInfo, Int)
 searchJobs conn (Just keyword) limit offset = do
   let wrappedKeyword = wrapKeyword (Just keyword)
       countQry = "SELECT COUNT(*) FROM job WHERE job_id IN (SELECT rowid FROM job_trace WHERE trace MATCH ?);"
@@ -111,7 +111,8 @@ searchJobs conn (Just keyword) limit offset = do
                 \ORDER BY job_date DESC LIMIT ? OFFSET ?;"
   totalRows <- query conn countQry (Only wrappedKeyword)
   rows <- query conn dataQry (wrappedKeyword, limit, offset)
-  return (map (\(jid, jdate, url, rid, rname, jname, path) -> JobInfo jid jdate url rid rname jname path) rows, fromOnly (head totalRows))
+  let jobs = map (\(jid, jdate, url, rid, rname, jname, path) -> JobInfo jid jdate url rid rname jname path) rows
+  return (SearchResults jobs, fromOnly (head totalRows))
 
 searchJobs conn Nothing limit offset = do
   let countQry = "SELECT COUNT(*) FROM job;"
@@ -119,7 +120,8 @@ searchJobs conn Nothing limit offset = do
                 \FROM job ORDER BY job_date DESC LIMIT ? OFFSET ?;"
   totalRows <- query conn countQry ()
   rows <- query conn dataQry (limit, offset)
-  return (map (\(jid, jdate, url, rid, rname, jname, path) -> JobInfo jid jdate url rid rname jname path) rows, fromOnly (head totalRows))
+  let jobs = map (\(jid, jdate, url, rid, rname, jname, path) -> JobInfo jid jdate url rid rname jname path) rows
+  return (SearchResults jobs, fromOnly (head totalRows))
 
 -- Scotty server for the search UI
 searchUIServer :: TMVar Connection -> ScottyM ()
@@ -140,8 +142,8 @@ searchUIServer connVar = do
     results' <- if T.null keyword
       then return NoSearch
       else do
-        (jobs, totalCount) <- liftIO $ searchJobs conn (Just keyword) pageSize offset
-        return $ SearchResults jobs
+        (searchResults, totalCount) <- liftIO $ searchJobs conn (Just keyword) pageSize offset
+        return searchResults
 
     let hasNextPage = case results' of
                         SearchResults jobs -> length jobs == pageSize
