@@ -63,8 +63,8 @@ renderJob job =
       "Project Path: " >> toHtml (projectPath job)
 
 -- HTML template for the search form and results
-renderPage :: Text -> SearchResults JobInfo -> Bool -> Int -> Html ()
-renderPage keyword results' hasNextPage nextPage = do
+renderPage :: Text -> SearchResults JobInfo -> Bool -> Int -> Bool -> Html ()
+renderPage keyword results' hasNextPage nextPage isExact = do
   doctype_
   html_ [lang_ "en"] $ do
     head_ $ do
@@ -76,6 +76,10 @@ renderPage keyword results' hasNextPage nextPage = do
         form_ [method_ "get", class_ "mb-6"] $ do
           input_ [type_ "hidden", name_ "page", value_ "1"]
           input_ [type_ "text", name_ "q", value_ keyword, class_ "p-2 border border-gray-300 rounded-lg w-full"]
+          div_ [class_ "mt-2"] $ do
+            label_ [class_ "inline-flex items-center"] $ do
+              input_ [type_ "checkbox", name_ "exact", value_ "true", class_ "form-checkbox", if isExact then checked_ else mempty]
+              span_ [class_ "ml-2 text-gray-700"] "Advanced Search"
           button_ [type_ "submit", class_ "mt-2 p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"] "Search"
         hr_ [class_ "my-4"]
 
@@ -90,11 +94,13 @@ renderPage keyword results' hasNextPage nextPage = do
                 form_ [method_ "get", class_ "inline"] $ do
                   input_ [type_ "hidden", name_ "page", value_ (T.pack (show (nextPage - 2)))]
                   input_ [type_ "hidden", name_ "q", value_ keyword]
+                  input_ [type_ "hidden", name_ "exact", value_ (if isExact then "true" else "false")]
                   button_ [type_ "submit", class_ "p-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"] "Previous Page"
               when hasNextPage $
                 form_ [method_ "get", class_ "inline"] $ do
                   input_ [type_ "hidden", name_ "page", value_ (T.pack (show nextPage))]
                   input_ [type_ "hidden", name_ "q", value_ keyword]
+                  input_ [type_ "hidden", name_ "exact", value_ (if isExact then "true" else "false")]
                   button_ [type_ "submit", class_ "p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"] "Next Page"
 
 -- Function to wrap the keyword in quotes
@@ -103,9 +109,8 @@ wrapKeyword = fmap (\k -> "\"" <> k <> "\"")
 
 -- Database query to fetch job results based on the keyword
 searchJobs :: Connection -> Maybe Text -> Int -> Int -> IO (SearchResults JobInfo, Int)
-searchJobs conn (Just keyword) limit offset = do
-  let wrappedKeyword = wrapKeyword (Just keyword)
-      countQry = "SELECT COUNT(*) FROM job WHERE job_id IN (SELECT rowid FROM job_trace WHERE trace MATCH ?);"
+searchJobs conn wrappedKeyword limit offset = do
+  let countQry = "SELECT COUNT(*) FROM job WHERE job_id IN (SELECT rowid FROM job_trace WHERE trace MATCH ?);"
       dataQry = "SELECT job_id, job_date, web_url, runner_id, runner_name, job_name, project_path \
                 \FROM job WHERE job_id IN (SELECT rowid FROM job_trace WHERE trace MATCH ?) \
                 \ORDER BY job_date DESC LIMIT ? OFFSET ?;"
