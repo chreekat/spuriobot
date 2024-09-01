@@ -84,7 +84,7 @@ renderPage keyword results' hasNextPage nextPage isExact = do
         hr_ [class_ "my-4"]
 
         case results' of
-          NoSearch -> pure ()  -- Don't show anything if no search has been made
+          NoSearch -> p_ [class_ "text-gray-700"] "Please enter a search query to start."
           SearchResults [] -> p_ [class_ "text-gray-700"] "No results found."
           SearchResults results -> do
             div_ [class_ "space-y-4"] $
@@ -125,26 +125,37 @@ searchJobs _ Nothing _ _ = return (NoSearch, 0)
 searchUIServer :: TMVar Connection -> ScottyM ()
 searchUIServer connVar = do
   get "/" $ do
-    -- Get the query parameter "q", default to an empty string if not provided
-    mKeyword <- param "q" `rescue` (\(_ :: ScottyException) -> return "")
-    page <- param "page" `rescue` (\(_ :: ScottyException) -> return 1)
+    -- Get the keyword from the query parameter
+    mKeyword <- (queryParamMaybe "q" :: ActionM (Maybe Text)) `rescue` (\(_ :: ScottyException) -> return Nothing)
+    
+    -- Get the state of the "Advanced Search" checkbox from the query parameter, default to "false" if not present
+    isExactQueryParam <- (queryParamMaybe "exact" :: ActionM (Maybe Text)) `rescue` (\(_ :: ScottyException) -> return Nothing)
 
-    -- Ensure the keyword is always a Text value, even if empty
-    let keyword = if T.null mKeyword then "" else mKeyword
+    -- Default to 1 if page is not provided
+    page <- (queryParamMaybe "page" :: ActionM (Maybe Int)) `rescue` (\(_ :: ScottyException) -> return (Just 1))
+
+    let isExact = case isExactQueryParam of
+                    Just "true" -> True
+                    _ -> False
+
+    let keyword = maybe "" id mKeyword
         pageSize = 50
-        offset = (page - 1) * pageSize
+        offset = (maybe 1 id page - 1) * pageSize
+        wrappedKeyword = if isExact then Just keyword else wrapKeyword (Just keyword)
 
     conn <- liftIO $ atomically $ readTMVar connVar
 
-    -- If keyword is empty, no search has been performed
-    results' <- if T.null keyword
-      then return NoSearch
-      else do
-        (searchResults, totalCount) <- liftIO $ searchJobs conn (Just keyword) pageSize offset
-        return searchResults
+    results' <- case mKeyword of
+      Nothing -> return NoSearch  -- No search performed
+      Just "" -> do
+        (searchResults, totalCount) <- liftIO $ searchJobs conn wrappedKeyword pageSize offset
+        return searchResults  -- Perform search with empty string
+      Just _ -> do
+        (searchResults, totalCount) <- liftIO $ searchJobs conn wrappedKeyword pageSize offset
+        return searchResults  -- Perform search with provided keyword
 
     let hasNextPage = case results' of
                         SearchResults jobs -> length jobs == pageSize
                         _ -> False
 
-    html $ renderText $ renderPage keyword results' hasNextPage (page + 1)
+    html $ renderText (renderPage keyword results' hasNextPage (maybe 1 id page + 1) isExact)
