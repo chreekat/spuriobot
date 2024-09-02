@@ -123,11 +123,15 @@ instance FromRow FTSJob where
 -- | Builds a URI to the jobs endpoint from a Project and an optional page
 -- number.
 jobsAPI :: Project -> Maybe Int -> URI
-jobsAPI (projId -> i) page = fromJust $ mkURI $
-    "https://gitlab.haskell.org/api/v4/projects/"
-    <> T.pack (show i)
-    <> "/jobs?scope%5B%5D=failed&scope%5b%5d=success&per_page=100"
-    <> maybe "" (\p -> "&page=" <> T.pack (show p)) page
+jobsAPI (projId -> i) page =
+    let u = "https://gitlab.haskell.org/api/v4/projects/"
+            <> T.pack (show (unProjectId i))
+            <> "/jobs?scope%5B%5D=failed&scope%5b%5d=success&per_page=100"
+            <> maybe "" (\p -> "&page=" <> T.pack (show p)) page
+        v = mkURI u
+    in case v of
+        Left e -> error $ "Bad URI parse: " <> show e
+        Right v' -> v'
 
 -- | This deals with pagination. It returns the jobs fetched, but also encodes
 -- whether or not there still more left to fetch.
@@ -234,7 +238,7 @@ clearStagedJobs key connVar = do
     logg "Clearing staged jobs"
     jobs <- bracketDB "jobs with no traces" connVar
         $ \conn -> query_ conn [sql|
-            select j.job_id, j.job_date, j.web_url, j.runner_id, j.runner_name, j.job_name, j.project_path
+            select j.job_id, j.web_url, j.runner_id, j.runner_name, j.job_created_at, j.job_finished_at, j.job_failure_reason, j.job_name
             from job j
             left join job_trace t
             on j.job_id = t.rowid
@@ -253,7 +257,7 @@ stageJobs key connVar dateRange projURL = do
             executeMany conn jobInsertString (map FTSJob j)
 
 jobInsertString :: Query
-jobInsertString = "insert or ignore into job (job_id, job_date, web_url, runner_id, runner_name, job_name, project_path) values (?,?,?,?,?,?,?)"
+jobInsertString = "insert or ignore into job (job_id, web_url, runner_id, runner_name, job_created_at, job_finished_at, job_failure_reason, job_name) values (?,?,?,?,?,?,?,?)"
 
 -- | Initialize the database
 initDatabase :: MonadIO m => TMVar Connection -> m ()
@@ -262,12 +266,13 @@ initDatabase connVar = do
         execute_ conn [sql|
             create table if not exists job (
                 job_id int primary key,
-                job_date text,
                 web_url text,
                 runner_id int,
                 runner_name text,
-                job_name text,
-                project_path text
+                job_created_at datetime,
+                job_finished_at datetime,
+                job_failure_reason text,
+                job_name text
             )
             without rowid;
         |]
