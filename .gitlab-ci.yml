@@ -19,7 +19,9 @@ workflow:
     - if: $CI_COMMIT_BRANCH
 
 default:
-  tags: 
+  before_script:
+    - nix-shell -p coreutils --run "sed -i 's/build-users-group = .*/build-users-group =/' /etc/nix/nix.conf"
+  tags:
     - x86_64-linux
 
 spuriobot_nix_build:
