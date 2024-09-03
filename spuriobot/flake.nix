@@ -24,6 +24,7 @@
           )
           pkgs.haskell.lib.compose.doJailbreak
         ];
+        scotty = self.callHackage "scotty" "0.22" {};
       };
       myPkgs = import nixpkgs { system = "x86_64-linux"; overlays = [ self.overlays.default ]; };
     in {
