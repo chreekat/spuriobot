@@ -150,24 +150,23 @@ searchUIServer connVar = do
                     Just "true" -> True
                     _ -> False
 
-    let keyword = maybe "" id mKeyword
-        pageSize = 50
-        offset = (maybe 1 id page - 1) * pageSize
-        wrappedKeyword = if isExact then Just keyword else wrapKeyword (Just keyword)
+    let pageSize = 50
+        page = fromMaybe defaultPageNumber mPage  -- page value equal to what was passed as parameter else defaultPageNumber
+        offset = (page - 1) * pageSize
+        wrappedKeyword :: Maybe Text
+        wrappedKeyword = case mKeyword of
+          Nothing -> Nothing
+          Just keyword -> if isExact
+                          then Just keyword
+                          else wrapKeyword (Just keyword)
 
     conn <- liftIO $ atomically $ readTMVar connVar
 
-    results' <- case mKeyword of
-      Nothing -> return NoSearch  -- No search performed
-      Just "" -> do
-        (searchResults, totalCount) <- liftIO $ searchJobs conn wrappedKeyword pageSize offset
-        return searchResults  -- Perform search with empty string
-      Just _ -> do
-        (searchResults, totalCount) <- liftIO $ searchJobs conn wrappedKeyword pageSize offset
-        return searchResults  -- Perform search with provided keyword
+    -- Execute the search
+    outcome <- liftIO $ searchJobs conn wrappedKeyword pageSize offset
 
-    let hasNextPage = case results' of
-                        SearchResults jobs -> length jobs == pageSize
+    let hasNextPage = case outcome of
+                        SearchSuccess (SearchResults jobs) -> length jobs == pageSize
                         _ -> False
 
-    html $ renderText (renderPage keyword results' hasNextPage (maybe 1 id page + 1) isExact)
+    html $ renderText $ renderPage mKeyword outcome hasNextPage (page + 1) isExact
