@@ -137,13 +137,14 @@ searchUIServer :: TMVar Connection -> ScottyM ()
 searchUIServer connVar = do
   get "/" $ do
     -- Get the keyword from the query parameter
-    mKeyword <- (queryParamMaybe "q" :: ActionM (Maybe Text)) `rescue` (\(_ :: ScottyException) -> return Nothing)
+    mKeyword <- queryParamMaybe "q"
     
     -- Get the state of the "Advanced Search" checkbox from the query parameter, default to "false" if not present
-    isExactQueryParam <- (queryParamMaybe "exact" :: ActionM (Maybe Text)) `rescue` (\(_ :: ScottyException) -> return Nothing)
+    isExactQueryParam <- queryParamMaybe "exact" :: ActionM (Maybe Text)
 
-    -- Default to 1 if page is not provided
-    page <- (queryParamMaybe "page" :: ActionM (Maybe Int)) `rescue` (\(_ :: ScottyException) -> return (Just 1))
+    -- Fetch the page number without default value
+    mPage <- queryParamMaybe "page" :: ActionM (Maybe Int)
+    let defaultPageNumber = 1
 
     let isExact = case isExactQueryParam of
                     Just "true" -> True
