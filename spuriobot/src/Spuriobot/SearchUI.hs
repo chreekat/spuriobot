@@ -67,8 +67,8 @@ renderJob job =
       "Project Path: " >> toHtml (projectPath job)
 
 -- HTML template for the search form and results
-renderPage :: Text -> SearchResults JobInfo -> Bool -> Int -> Bool -> Html ()
-renderPage keyword results' hasNextPage nextPage isExact = do
+renderPage :: Maybe Text -> SearchOutcome JobInfo -> Bool -> Int -> Bool -> Html ()
+renderPage mKeyword outcome hasNextPage nextPage isExact = do
   doctype_
   html_ [lang_ "en"] $ do
     head_ $ do
@@ -79,7 +79,7 @@ renderPage keyword results' hasNextPage nextPage isExact = do
         h1_ [class_ "text-3xl font-bold mb-4"] "Job Search"
         form_ [method_ "get", class_ "mb-6"] $ do
           input_ [type_ "hidden", name_ "page", value_ "1"]
-          input_ [type_ "text", name_ "q", value_ keyword, class_ "p-2 border border-gray-300 rounded-lg w-full"]
+          input_ [type_ "text", name_ "q", value_ (fromMaybe "" mKeyword), class_ "p-2 border border-gray-300 rounded-lg w-full"]
           div_ [class_ "mt-2"] $ do
             label_ [class_ "inline-flex items-center"] $ do
               input_ [type_ "checkbox", name_ "exact", value_ "true", class_ "form-checkbox", if isExact then checked_ else mempty]
@@ -87,23 +87,24 @@ renderPage keyword results' hasNextPage nextPage isExact = do
           button_ [type_ "submit", class_ "mt-2 p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"] "Search"
         hr_ [class_ "my-4"]
 
-        case results' of
-          NoSearch -> p_ [class_ "text-gray-700"] "Please enter a search query to start."
-          SearchResults [] -> p_ [class_ "text-gray-700"] "No results found."
-          SearchResults results -> do
+        case outcome of
+          SearchError errMsg -> p_ [class_ "text-red-500"] (toHtml errMsg)
+          SearchSuccess NoSearch -> p_ [class_ "text-gray-700"] "Please enter a search query to start."
+          SearchSuccess (SearchResults []) -> p_ [class_ "text-gray-700"] "No results found."
+          SearchSuccess (SearchResults results) -> do
             div_ [class_ "space-y-4"] $
               mapM_ renderJob results
             div_ [class_ "flex justify-between mt-6"] $ do
               when (nextPage > 2) $
                 form_ [method_ "get", class_ "inline"] $ do
                   input_ [type_ "hidden", name_ "page", value_ (T.pack (show (nextPage - 2)))]
-                  input_ [type_ "hidden", name_ "q", value_ keyword]
+                  input_ [type_ "hidden", name_ "q", value_ (fromMaybe "" mKeyword)]
                   input_ [type_ "hidden", name_ "exact", value_ (if isExact then "true" else "false")]
                   button_ [type_ "submit", class_ "p-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"] "Previous Page"
               when hasNextPage $
                 form_ [method_ "get", class_ "inline"] $ do
                   input_ [type_ "hidden", name_ "page", value_ (T.pack (show nextPage))]
-                  input_ [type_ "hidden", name_ "q", value_ keyword]
+                  input_ [type_ "hidden", name_ "q", value_ (fromMaybe "" mKeyword)]
                   input_ [type_ "hidden", name_ "exact", value_ (if isExact then "true" else "false")]
                   button_ [type_ "submit", class_ "p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"] "Next Page"
 
