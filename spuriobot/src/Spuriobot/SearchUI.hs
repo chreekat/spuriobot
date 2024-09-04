@@ -113,8 +113,11 @@ wrapKeyword :: Maybe Text -> Maybe Text
 wrapKeyword = fmap (\k -> "\"" <> k <> "\"")
 
 -- Database query to fetch job results based on the keyword
-searchJobs :: Connection -> Maybe Text -> Int -> Int -> IO (SearchResults JobInfo, Int)
-searchJobs conn wrappedKeyword limit offset = do
+searchJobs :: Connection -> Maybe Text -> Int -> Int -> IO (SearchOutcome JobInfo)
+searchJobs _ Nothing _ _ = pure (SearchSuccess NoSearch)
+searchJobs _ (Just "") _ _ = pure (SearchSuccess NoSearch) -- empty string treated as Nothing
+searchJobs _ (Just "\"\"") _ _ = pure (SearchSuccess NoSearch) -- empty string treated as Nothing when exact=False
+searchJobs conn (Just wrappedKeyword) limit offset = do
   let countQry = "SELECT COUNT(*) FROM job WHERE job_id IN (SELECT rowid FROM job_trace WHERE trace MATCH ?);"
       dataQry = "SELECT job_id, job_date, web_url, runner_id, runner_name, job_name, project_path \
                 \FROM job WHERE job_id IN (SELECT rowid FROM job_trace WHERE trace MATCH ?) \
