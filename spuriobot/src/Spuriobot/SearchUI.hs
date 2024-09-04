@@ -7,20 +7,20 @@
 module Spuriobot.SearchUI (searchUIServer, searchAPI) where
 
 import Web.Scotty
-import Control.Monad.IO.Class (liftIO)
-import Database.SQLite.Simple
+import Database.SQLite.Simple (Connection, Only(..), query)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Time.Format (formatTime, defaultTimeLocale)
 import Lucid
 import Control.Concurrent.STM (TMVar, readTMVar, atomically)
 import Servant.API
-import Servant.Server (Server)
 import Data.Proxy (Proxy(..))
 import Control.Monad (when)
 import Data.Int (Int64)
 import Data.Time (UTCTime)
 import GHC.Generics (Generic)
+import Control.Exception (try, SomeException)
+import Data.Maybe (fromMaybe)
 
 -- Define JobInfo data type
 data JobInfo = JobInfo
@@ -35,6 +35,10 @@ data JobInfo = JobInfo
 
 -- Define the SearchResults data type
 data SearchResults a = NoSearch | SearchResults [a]
+  deriving (Show, Generic)
+
+-- Define a type to handle possible outcomes during search
+data SearchOutcome a = SearchError Text | SearchSuccess (SearchResults a)
   deriving (Show, Generic)
 
 -- Define the Search API
@@ -114,12 +118,15 @@ searchJobs conn wrappedKeyword limit offset = do
       dataQry = "SELECT job_id, job_date, web_url, runner_id, runner_name, job_name, project_path \
                 \FROM job WHERE job_id IN (SELECT rowid FROM job_trace WHERE trace MATCH ?) \
                 \ORDER BY job_date DESC LIMIT ? OFFSET ?;"
-  totalRows <- query conn countQry (Only wrappedKeyword)
-  rows <- query conn dataQry (wrappedKeyword, limit, offset)
-  let jobs = map (\(jid, jdate, url, rid, rname, jname, path) -> JobInfo jid jdate url rid rname jname path) rows
-  return (SearchResults jobs, fromOnly (head totalRows))
+  result <- try $ do
+    totalRows <- query conn countQry (Only wrappedKeyword) :: IO [Only Int]
+    rows <- query conn dataQry (wrappedKeyword, limit, offset)
+    let jobs = map (\(jid, jdate, url, rid, rname, jname, path) -> JobInfo jid jdate url rid rname jname path) rows
+    pure $ SearchSuccess (SearchResults jobs)
 
-searchJobs _ Nothing _ _ = return (NoSearch, 0)
+  case result of
+    Left (err :: SomeException) -> pure $ SearchError $ "Database error: " <> T.pack (show err)
+    Right value -> pure value
 
 -- Scotty server for the search UI
 searchUIServer :: TMVar Connection -> ScottyM ()
