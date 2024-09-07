@@ -122,15 +122,12 @@ searchJobs conn (Just wrappedKeyword) limit offset = do
       dataQry = "SELECT job_id, job_date, web_url, runner_id, runner_name, job_name, project_path \
                 \FROM job WHERE job_id IN (SELECT rowid FROM job_trace WHERE trace MATCH ?) \
                 \ORDER BY job_date DESC LIMIT ? OFFSET ?;"
-  result <- try $ do
-    totalRows <- query conn countQry (Only wrappedKeyword) :: IO [Only Int]
-    rows <- query conn dataQry (wrappedKeyword, limit, offset)
-    let jobs = map (\(jid, jdate, url, rid, rname, jname, path) -> JobInfo jid jdate url rid rname jname path) rows
-    pure $ SearchSuccess (SearchResults jobs)
+  
+  totalRows <- query conn countQry (Only wrappedKeyword) :: IO [Only Int]
+  rows <- query conn dataQry (wrappedKeyword, limit, offset)
+  let jobs = map (\(jid, jdate, url, rid, rname, jname, path) -> JobInfo jid jdate url rid rname jname path) rows
+  pure $ SearchSuccess (SearchResults jobs)
 
-  case result of
-    Left (err :: SomeException) -> pure $ SearchError $ "Database error: " <> T.pack (show err)
-    Right value -> pure value
 
 -- Scotty server for the search UI
 searchUIServer :: TMVar Connection -> ScottyM ()
