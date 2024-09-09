@@ -73,7 +73,10 @@ renderPage mKeyword outcome hasNextPage nextPage isExact = do
           div_ [class_ "mt-2"] $ do
             label_ [class_ "inline-flex items-center"] $ do
               input_ [type_ "checkbox", name_ "exact", value_ "true", class_ "form-checkbox", if isExact then checked_ else mempty]
-              span_ [class_ "ml-2 text-gray-700"] "Advanced Search"
+              span_ [class_ "ml-2 text-gray-700"] $ do
+                "Advanced Search"
+                " "
+                a_ [href_ "https://www.sqlite.org/fts5.html#full_text_query_syntax"] "(SQLite FTS5 Query Syntax)"
           button_ [type_ "submit", class_ "mt-2 p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"] "Search"
         hr_ [class_ "my-4"]
 
