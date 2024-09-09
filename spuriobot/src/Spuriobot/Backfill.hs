@@ -269,8 +269,8 @@ stageJobs key connVar dateRange projURL = do
                     let jobWithProjectPath = JobWithProjectPath job (project_path projectInfo)
 
                     -- Destructure JobWithProjectPath and then Job
-                    let JobWithProjectPath job projectPath = jobWithProjectPath
-                    let Job jobId jobDate webUrl runnerId runnerName jobName _ = job
+                    let JobWithProjectPath job' projectPath = jobWithProjectPath
+                    let Job jobId jobDate webUrl runnerId runnerName jobName _ = job'
 
                     -- Execute SQL query with the selected fields
                     bracketDB "insert jobs" connVar $ \conn ->

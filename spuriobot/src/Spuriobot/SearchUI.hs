@@ -7,7 +7,7 @@
 module Spuriobot.SearchUI (searchUIServer, searchAPI) where
 
 import Web.Scotty
-import Database.SQLite.Simple (Connection, Only(..), query)
+import Database.SQLite.Simple (Connection, query)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Time.Format (formatTime, defaultTimeLocale)
@@ -19,7 +19,6 @@ import Control.Monad (when)
 import Data.Int (Int64)
 import Data.Time (UTCTime)
 import GHC.Generics (Generic)
-import Control.Exception (try, SomeException)
 import Data.Maybe (fromMaybe)
 
 -- Define JobInfo data type
@@ -118,12 +117,12 @@ searchJobs _ Nothing _ _ = pure (SearchSuccess NoSearch)
 searchJobs _ (Just "") _ _ = pure (SearchSuccess NoSearch) -- empty string treated as Nothing
 searchJobs _ (Just "\"\"") _ _ = pure (SearchSuccess NoSearch) -- empty string treated as Nothing when exact=False
 searchJobs conn (Just wrappedKeyword) limit offset = do
-  let countQry = "SELECT COUNT(*) FROM job WHERE job_id IN (SELECT rowid FROM job_trace WHERE trace MATCH ?);"
+  let -- countQry = "SELECT COUNT(*) FROM job WHERE job_id IN (SELECT rowid FROM job_trace WHERE trace MATCH ?);"
       dataQry = "SELECT job_id, job_date, web_url, runner_id, runner_name, job_name, project_path \
                 \FROM job WHERE job_id IN (SELECT rowid FROM job_trace WHERE trace MATCH ?) \
                 \ORDER BY job_date DESC LIMIT ? OFFSET ?;"
   
-  totalRows <- query conn countQry (Only wrappedKeyword) :: IO [Only Int]
+  -- totalRows <- query conn countQry (Only wrappedKeyword) :: IO [Only Int]
   rows <- query conn dataQry (wrappedKeyword, limit, offset)
   let jobs = map (\(jid, jdate, url, rid, rname, jname, path) -> JobInfo jid jdate url rid rname jname path) rows
   pure $ SearchSuccess (SearchResults jobs)
