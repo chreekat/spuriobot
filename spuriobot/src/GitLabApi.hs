@@ -6,6 +6,7 @@
 -- Used for MonadConc:
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module GitLabApi (
     GitLabBuildEvent (..),
@@ -13,8 +14,7 @@ module GitLabApi (
     GitLabTime(..),
     ProjectId (..),
     JobId,
-    fetchFinishedJob,
-    fetchProject,
+    Job(..),
     FinishedJob(..),
     Project(..),
     JobFailureReason(..),
@@ -22,12 +22,13 @@ module GitLabApi (
     retryJobApi,
     RetryResult(..),
     JobWebUrlParseFailure(..),
-    fetchJobLogs,
     GitLabSystemEvent(..),
     ProjectEventType(..),
     JobWebhook(..),
     addProjectBuildHook,
-    JobWebURI(..)
+    JobWebURI(..),
+    gitlab,
+    finishedJobToJob
 ) where
 
 import Data.Aeson
@@ -35,6 +36,7 @@ import qualified Data.Aeson.Types as Aeson
 import qualified Data.Attoparsec.Text as AttoText
 import qualified Data.Attoparsec.Time as Atto
 import Data.Text (Text)
+import qualified Data.Text as T
 import Network.HTTP.Req (
     NoReqBody (..),
     ReqBodyJson (..),
@@ -45,7 +47,7 @@ import Network.HTTP.Req (
     req,
     responseBody,
     runReq,
-    (/:), (/~), bsResponse, ignoreResponse, useURI,
+    (/:), (/~), ignoreResponse,
  )
 import qualified Network.HTTP.Req as R
 import Data.Time (UTCTime)
@@ -55,8 +57,9 @@ import Data.Time.LocalTime (localTimeToUTC, utc)
 import GHC.Generics (Generic)
 import Data.ByteString (ByteString)
 import Text.URI (mkURI, URI)
-import Data.Text.Encoding (decodeUtf8)
 import Control.Applicative ((<|>))
+import Control.Monad.Catch
+import Data.Aeson.Encoding (text)
 
 --
 -- GitLab API types and handlers
@@ -88,7 +91,7 @@ attoParseGitLabTime = fmap GitLabTime $ do
     _ <- AttoText.string " UTC"
     pure $ localTimeToUTC utc localtime
 
-newtype ProjectId = ProjectId {unProjectId :: Int}
+newtype ProjectId = ProjectId {unProjectId :: Int64}
     deriving stock (Show, Ord, Eq)
     deriving newtype (FromJSON, ToJSON)
 
@@ -102,34 +105,35 @@ type JobId = Int64
 
 
 
--- | The data we get from the /job API endpoint for finished jobs.
+-- | The data we get from the /job API endpoint.
 --
 -- Most of what we need could come from the BuildEvent, but the web_url in
 -- particular is missing, so it's not sufficient for our use.
 --
 -- Informally, we use BuildEvent to decide whether or not to check the job for
 -- failures, and the /job endpoint for everything else.
---
--- That the job is actually finished is not checked. However, by assuming it
--- *is* finished, we know that jobFinishedAt is guaranteed to exist.
-data FinishedJob = FinishedJob
-    { webUrl :: JobWebURI
+data Job = Job
+    { jobId :: JobId
+    , webUrl :: JobWebURI
     , runnerId :: Maybe Int64
     , runnerName :: Maybe Text
     -- ^ GitLab can "lose" runner info, so runner fields are 'Maybe'
-    , jobFinishedAt :: UTCTime
+    , jobCreatedAt :: UTCTime
+    , jobFinishedAt :: Maybe UTCTime
     , jobFailureReason :: Maybe JobFailureReason
     , jobName :: Text
     }
     deriving (Show, Eq)
 
-instance FromJSON FinishedJob where
-    parseJSON = withObject "FinishedJob" $ \o ->
-        FinishedJob
-            <$> o .: "web_url"
+instance FromJSON Job where
+    parseJSON = withObject "Job" $ \o ->
+        Job
+            <$> o .: "id"
+            <*> o .: "web_url"
             <*> (o .:? "runner" >>= maybe (pure Nothing) (.: "id"))
             <*> (o .:? "runner" >>= maybe (pure Nothing) (.: "description"))
-            <*> o .: "finished_at"
+            <*> o .: "created_at"
+            <*> o .:? "finished_at"
             <*> o .:? "failure_reason"
             <*> o .: "name"
 
@@ -143,6 +147,18 @@ instance FromJSON JobFailureReason where
         f "stuck_or_timeout_failure" = JobStuck
         f "runner_system_failure" = RunnerSystemFailure
         f x = OtherReason x
+
+-- | Used in the ToField instance
+instance ToJSON JobFailureReason where
+    toJSON JobTimeout = "job_execution_timeout"
+    toJSON JobStuck = "stuck_or_timeout_failure"
+    toJSON RunnerSystemFailure = "runner_system_failure"
+    toJSON (OtherReason x) = toJSON x
+
+    toEncoding JobTimeout = text "job_execution_timeout"
+    toEncoding JobStuck = text "stuck_or_timeout_failure"
+    toEncoding RunnerSystemFailure = text "runner_system_failure"
+    toEncoding (OtherReason x) = text x
 
 -- | The known build statuses that we care about.
 data BuildStatus = Failed | OtherBuildStatus Text
@@ -159,6 +175,38 @@ instance ToJSON BuildStatus where
 
 
 
+-- | This is a sort of god-object for processing of finished jobs. It mostly
+-- mirrors Job (which comes from the GitLab API), except we know jobFinishedAt
+-- is non-null, and we add logs and the missing data that comes from the Project API
+-- endpoint.
+data FinishedJob = FinishedJob
+    { finishedJobWebUrl :: JobWebURI
+    , finishedJobRunnerId :: Maybe Int64
+    , finishedJobRunnerName :: Maybe Text
+    -- ^ GitLab can "lose" runner info, so runner fields are 'Maybe'
+    , finishedJobFinishedAt :: UTCTime
+    , finishedJobFailureReason :: Maybe JobFailureReason
+    , finishedJobName :: Text
+    , finishedJobProjectPath :: Text
+    , finishedJobProjectId :: ProjectId
+    , finishedJobLogs :: Text
+    , finishedJobId :: JobId
+    , finishedJobCreatedAt :: UTCTime
+    }
+    deriving (Show, Eq)
+
+-- convert back to a job
+finishedJobToJob :: FinishedJob -> Job
+finishedJobToJob FinishedJob {..} = Job
+    { jobId = finishedJobId
+    , webUrl = finishedJobWebUrl
+    , runnerId = finishedJobRunnerId
+    , runnerName = finishedJobRunnerName
+    , jobCreatedAt = finishedJobCreatedAt
+    , jobFinishedAt = Just finishedJobFinishedAt
+    , jobFailureReason = finishedJobFailureReason
+    , jobName = finishedJobName
+    }
 
 --------------------------
 -- * /project API endpoint
@@ -166,33 +214,19 @@ instance ToJSON BuildStatus where
 
 
 -- | Data from the /project API endpoint. Just used to store as metadata when
--- recording failures.
-newtype Project = Project
+-- recording failures. And for that matter, it's just used to store the project
+-- path. (GitlabBuildEvent has something called project_name, but that comes out
+-- as "Glasgow Haskell Compiler / head.hackage".
+data Project = Project
     { projPath :: Text
+    , projId :: ProjectId
     } deriving (Eq, Show)
 
 instance FromJSON Project where
     parseJSON = withObject "Project" $ \o ->
         Project
             <$> o .: "path_with_namespace"
-
-fetchProject :: GitLabToken -> ProjectId -> IO Project
-fetchProject (GitLabToken tok) (ProjectId projectId) = do
-    fmap responseBody $ runReq defaultHttpConfig $
-        req
-            R.GET
-            ( https
-                "gitlab.haskell.org"
-                /: "api"
-                /: "v4"
-                /: "projects"
-                /~ projectId
-            )
-            NoReqBody
-            jsonResponse
-            (headerRedacted "PRIVATE-TOKEN" tok)
-
-
+            <*> o .: "id"
 
 -----------------------------
 -- * Job webhook
@@ -219,31 +253,10 @@ instance FromJSON GitLabBuildEvent where
             <*> v .: "project_id"
             <*> v .: "build_finished_at"
 
--- | Get /jobs/<job-id>
-fetchFinishedJob :: GitLabToken -> ProjectId -> JobId -> IO FinishedJob
-fetchFinishedJob (GitLabToken tok) (ProjectId projectId) jobId = do
-    fmap responseBody $ runReq defaultHttpConfig $
-        req
-            R.GET
-            ( https
-                "gitlab.haskell.org"
-                /: "api"
-                /: "v4"
-                /: "projects"
-                /~ projectId
-                /: "jobs"
-                /~ jobId
-            )
-            NoReqBody
-            jsonResponse
-            (headerRedacted "PRIVATE-TOKEN" tok)
-
 
 ------------------------
 -- * /job/<job-id>/retry
 ------------------------
-
-
 
 
 newtype RetryResult = RetryResult { retryJobId :: Int64 }
@@ -256,7 +269,7 @@ instance FromJSON RetryResult where
 -- | This name is dumb, but even worse would be to have the clashing names
 -- Spuriobot.RetryJob.retryJob and GitLabApi.retryJob. Sorry.
 retryJobApi :: GitLabToken -> ProjectId -> JobId -> IO JobId
-retryJobApi (GitLabToken tok) (ProjectId projectId) jobId =
+retryJobApi (GitLabToken tok) (ProjectId projectId) job =
     fmap (retryJobId . responseBody) $ runReq defaultHttpConfig $
         req
             R.POST
@@ -271,7 +284,7 @@ retryJobApi (GitLabToken tok) (ProjectId projectId) jobId =
                 /: "projects"
                 /~ projectId
                 /: "jobs"
-                /~ jobId
+                /~ job
                 /: "retry"
 
 
@@ -279,43 +292,16 @@ retryJobApi (GitLabToken tok) (ProjectId projectId) jobId =
 -- * /job/<job-id>/raw
 ----------------------
 
-newtype JobWebUrlParseFailure = JobWebUrlParseFailure URI
+newtype JobWebUrlParseFailure = JobWebUrlParseFailure URI deriving (Show)
 
-newtype JobWebURI = JobWebURI URI
+instance Exception JobWebUrlParseFailure
+
+newtype JobWebURI = JobWebURI { getJobWebURI :: URI }
     deriving (Eq, Show)
 
 instance FromJSON JobWebURI where
     parseJSON = withText "JobWebURI" $ \v -> do
         maybe (fail "could not parse URI") (pure . JobWebURI) (mkURI v)
-
--- | Get the raw job trace. The JobWebUrl may fail to parse.
---
--- This function uses the web UI rather than the actual GitLab JSON API. That's
--- because the trace endpoint of the API is very slow.
-fetchJobLogs :: GitLabToken -> JobWebURI -> IO (Either JobWebUrlParseFailure Text)
-fetchJobLogs (GitLabToken tok) (JobWebURI jobURI) =
-    let url = useURI jobURI
-    in case url of
-        Just (Left (url', opt)) -> fetch_job_raw url' opt
-        Just (Right (url', opt)) -> fetch_job_raw url' opt
-        Nothing -> pure (Left (JobWebUrlParseFailure jobURI))
-
-    where
-        fetch_job_raw url opt =
-            let raw_url = url /: "raw"
-            in runReq defaultHttpConfig $ do
-                -- TODO handle redirect to login which is gitlab's way of saying 404
-                -- if re.search('users/sign_in$', resp.url):
-                response <-
-                    req
-                        R.GET
-                        raw_url
-                        NoReqBody
-                        bsResponse
-                        (opt <> headerRedacted "PRIVATE-TOKEN" tok)
-
-                pure . Right . decodeUtf8 . responseBody $ response
-
 
 -------------------
 -- * System webhook
@@ -347,26 +333,24 @@ instance FromJSON GitLabSystemEvent where
 newtype JobWebhook = JobWebhook Text
     deriving (Eq, Show)
 
--- FIXME: If the url has 'https', set enable_ssl_verification to true.
---
--- NB: push_events defaults to True
+-- | NB: push_events defaults to True, though this isn't documented.
 instance ToJSON JobWebhook where
     toJSON (JobWebhook url) = object
         [ "url" .= url
         , "job_events" .= True
         , "push_events" .= False
-        , "enable_ssl_verification" .= False
+        , "enable_ssl_verification" .= "https://" `T.isPrefixOf` url
         ]
     toEncoding (JobWebhook url) = pairs
         ("url" .= url
         <> "job_events" .= True
         <> "push_events" .= False
-        <> "enable_ssl_verification" .= False
+        <> "enable_ssl_verification" .= "https://" `T.isPrefixOf` url
         )
 
 -- | Add a build webhook to a project
 addProjectBuildHook :: GitLabToken -> ProjectId -> Text -> IO ()
-addProjectBuildHook (GitLabToken tok) (ProjectId projId) hook =
+addProjectBuildHook (GitLabToken tok) (ProjectId proj) hook =
     fmap responseBody $ runReq defaultHttpConfig $
         req
             R.POST
@@ -381,5 +365,8 @@ addProjectBuildHook (GitLabToken tok) (ProjectId projId) hook =
                 /: "api"
                 /: "v4"
                 /: "projects"
-                /~ projId
+                /~ proj
                 /: "hooks"
+
+gitlab :: R.Url 'R.Https
+gitlab = R.https "gitlab.haskell.org" /: "api" /: "v4"

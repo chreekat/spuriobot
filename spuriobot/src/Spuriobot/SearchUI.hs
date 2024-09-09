@@ -17,7 +17,7 @@ import Data.Time (UTCTime)
 import GHC.Generics (Generic)
 import Data.Maybe (fromMaybe)
 
-import Spuriobot.Backfill (bracketDB2)
+import Spuriobot.FTS (bracketDB2)
 
 -- Define JobInfo data type
 data JobInfo = JobInfo

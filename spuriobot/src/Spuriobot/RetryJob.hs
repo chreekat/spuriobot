@@ -32,7 +32,7 @@ import Control.Concurrent (Chan, writeChan, readChan)
 import Data.Void (Void)
 import Control.Retry (retrying, limitRetries, fullJitterBackoff)
 
-import GitLabApi
+import GitLabApi hiding (jobId, projId)
 import Spuriobot.Foundation
 
 showt :: Show a => a -> Text
@@ -82,7 +82,7 @@ retryService = loop M.empty where
         -- A job that hasn't been retried isn't in the map, so we return 0
         let retryCount = M.findWithDefault 0 jobId retryMap
         -- We're done with this entry now, so delete it. Note this makes 'Clear'
-        -- a no-op in handle_cmd.
+        -- a no-op in handle_cmd; 'Clear' is only used to trigger this deletion.
         let retryMap' = M.delete jobId retryMap
         loop =<< withTrace ctx (handle_cmd jobId retryMap' retryCount cmd)
 

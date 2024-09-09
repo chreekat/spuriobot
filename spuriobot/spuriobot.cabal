@@ -15,14 +15,14 @@ extra-source-files:
 
 library
   exposed-modules:
-      Spuriobot
-      Spuriobot.Foundation
-      Spuriobot.DB
-      Spuriobot.RetryJob
-      Spuriobot.Spurio
       GitLabApi
-      Spuriobot.Backfill
+      Spuriobot
+      Spuriobot.DB
+      Spuriobot.FTS
+      Spuriobot.Foundation
+      Spuriobot.RetryJob
       Spuriobot.SearchUI
+      Spuriobot.Spurio
 
   other-modules:
       Paths_spuriobot
