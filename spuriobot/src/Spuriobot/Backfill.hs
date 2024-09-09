@@ -15,6 +15,7 @@ module Spuriobot.Backfill (
     Trace(..),
     JobWithProjectPath(..),
     Job(Job),
+    bracketDB2,
 ) where
 
 import Data.Int (Int64)
@@ -198,6 +199,11 @@ bracketDB :: MonadIO m => BS.ByteString -> TMVar a1 -> (a1 -> IO a2) -> m a2
 bracketDB msg v
     = liftIO
     . bracket (do c <- atomically (takeTMVar v); logg ("OPEN " <> msg); pure c) (\c -> logg ("CLOSE " <> msg) >> atomically (putTMVar v c))
+
+-- | A new bracketDB that catches errors thrown by SQLite itself (as opposed to
+-- the sqlite-simple library).
+bracketDB2 :: MonadIO m => BS.ByteString -> TMVar conn -> (conn -> IO res) -> m (Either SQLError res)
+bracketDB2 msg v = liftIO . try . bracketDB msg v
 
 newtype GitLabToken = GitLabToken BS.ByteString
 

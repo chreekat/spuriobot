@@ -5,7 +5,7 @@
 module Spuriobot.SearchUI (searchUIServer) where
 
 import Web.Scotty
-import Database.SQLite.Simple (Connection, query)
+import Database.SQLite.Simple (Connection, query, SQLError (..))
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Time.Format (formatTime, defaultTimeLocale)
@@ -16,7 +16,8 @@ import Data.Int (Int64)
 import Data.Time (UTCTime)
 import GHC.Generics (Generic)
 import Data.Maybe (fromMaybe)
-import Spuriobot.Backfill (bracketDB)
+
+import Spuriobot.Backfill (bracketDB2)
 
 -- Define JobInfo data type
 data JobInfo = JobInfo
@@ -147,7 +148,11 @@ searchUIServer connVar = do
                           else wrapKeyword (Just keyword)
 
     -- Execute the search
-    outcome <- bracketDB "UI search" connVar (searchJobs wrappedKeyword pageSize offset)
+    outcome' <- bracketDB2 "UI search" connVar (searchJobs wrappedKeyword pageSize offset)
+    let outcome = case outcome' of
+          Left e -> SearchError ("SQLite responded with ‘" <> err <> ": " <> sqlErrorDetails e <> "’")
+            where err = T.pack (drop 5 (show (sqlError e)))
+          Right r -> r
 
     let hasNextPage = case outcome of
                         SearchSuccess (SearchResults jobs) -> length jobs == pageSize
