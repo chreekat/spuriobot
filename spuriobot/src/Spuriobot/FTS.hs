@@ -10,8 +10,8 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
--- | Module for backfilling FTS database for all job logs till that point.
-module Spuriobot.Backfill (
+-- | Module for interacting with the FTS database.
+module Spuriobot.FTS (
     Job(Job),
     Trace(..),
     bracketDB,
