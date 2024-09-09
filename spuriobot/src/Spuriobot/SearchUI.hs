@@ -1,10 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 
-module Spuriobot.SearchUI (searchUIServer, searchAPI) where
+module Spuriobot.SearchUI (searchUIServer) where
 
 import Web.Scotty
 import Database.SQLite.Simple (Connection, query)
@@ -13,8 +11,6 @@ import qualified Data.Text as T
 import Data.Time.Format (formatTime, defaultTimeLocale)
 import Lucid
 import Control.Concurrent.STM (TMVar, readTMVar, atomically)
-import Servant.API
-import Data.Proxy (Proxy(..))
 import Control.Monad (when)
 import Data.Int (Int64)
 import Data.Time (UTCTime)
@@ -39,13 +35,6 @@ data SearchResults a = NoSearch | SearchResults [a]
 -- Define a type to handle possible outcomes during search
 data SearchOutcome a = SearchError Text | SearchSuccess (SearchResults a)
   deriving (Show, Generic)
-
--- Define the Search API
-type SearchAPI = "search" :> QueryParam "q" Text :> Get '[PlainText] (Html ())
-
--- Create a Proxy for the Search API
-searchAPI :: Proxy SearchAPI
-searchAPI = Proxy
 
 -- HTML rendering function using Lucid
 renderJob :: JobInfo -> Html ()
