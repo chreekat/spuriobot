@@ -10,12 +10,13 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Time.Format (formatTime, defaultTimeLocale)
 import Lucid
-import Control.Concurrent.STM (TMVar, readTMVar, atomically)
+import Control.Concurrent.STM (TMVar)
 import Control.Monad (when)
 import Data.Int (Int64)
 import Data.Time (UTCTime)
 import GHC.Generics (Generic)
 import Data.Maybe (fromMaybe)
+import Spuriobot.Backfill (bracketDB)
 
 -- Define JobInfo data type
 data JobInfo = JobInfo
@@ -101,11 +102,11 @@ wrapKeyword :: Maybe Text -> Maybe Text
 wrapKeyword = fmap (\k -> "\"" <> k <> "\"")
 
 -- Database query to fetch job results based on the keyword
-searchJobs :: Connection -> Maybe Text -> Int -> Int -> IO (SearchOutcome JobInfo)
-searchJobs _ Nothing _ _ = pure (SearchSuccess NoSearch)
-searchJobs _ (Just "") _ _ = pure (SearchSuccess NoSearch) -- empty string treated as Nothing
-searchJobs _ (Just "\"\"") _ _ = pure (SearchSuccess NoSearch) -- empty string treated as Nothing when exact=False
-searchJobs conn (Just wrappedKeyword) limit offset = do
+searchJobs :: Maybe Text -> Int -> Int -> Connection -> IO (SearchOutcome JobInfo)
+searchJobs Nothing _ _ _ = pure (SearchSuccess NoSearch)
+searchJobs (Just "") _ _ _ = pure (SearchSuccess NoSearch) -- empty string treated as Nothing
+searchJobs (Just "\"\"") _ _ _ = pure (SearchSuccess NoSearch) -- empty string treated as Nothing when exact=False
+searchJobs (Just wrappedKeyword) limit offset conn = do
   let -- countQry = "SELECT COUNT(*) FROM job WHERE job_id IN (SELECT rowid FROM job_trace WHERE trace MATCH ?);"
       dataQry = "SELECT job_id, job_date, web_url, runner_id, runner_name, job_name, project_path \
                 \FROM job WHERE job_id IN (SELECT rowid FROM job_trace WHERE trace MATCH ?) \
@@ -145,10 +146,8 @@ searchUIServer connVar = do
                           then Just keyword
                           else wrapKeyword (Just keyword)
 
-    conn <- liftIO $ atomically $ readTMVar connVar
-
     -- Execute the search
-    outcome <- liftIO $ searchJobs conn wrappedKeyword pageSize offset
+    outcome <- bracketDB "UI search" connVar (searchJobs wrappedKeyword pageSize offset)
 
     let hasNextPage = case outcome of
                         SearchSuccess (SearchResults jobs) -> length jobs == pageSize
