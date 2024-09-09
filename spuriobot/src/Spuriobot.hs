@@ -2,6 +2,8 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE OverloadedStrings #-}
+
 {- |
 Module: Spuriobot
 Description: Log spurious GHC GitLab build failures
@@ -26,7 +28,6 @@ import Control.Exception (handle, throwIO)
 import Control.Monad (void)
 import Control.Monad.Catch ( Exception, finally )
 import Control.Monad.Reader (asks)
-import Control.Monad.Trans (liftIO)
 import Data.Pool (Pool, newPool, defaultPoolConfig)
 import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8)
@@ -41,14 +42,14 @@ import Text.URI (render)
 import qualified Data.Text as T
 import qualified Database.SQLite.Simple as SQLite
 
-
-
 import qualified Spuriobot.DB as DB
 import GitLabApi
 import Spuriobot.RetryJob
 import Spuriobot.Foundation
 import Spuriobot.Spurio
 import Spuriobot.Backfill (fetchJobsBetweenDates, initDatabase)
+import Spuriobot.SearchUI (searchUIServer)
+import Web.Scotty
 
 
 -- | API served by this app
@@ -104,7 +105,7 @@ main = do
             pool <- newPool (defaultPoolConfig DB.connect DB.close fiveMin reasonableDefault)
 
             chan <- RetryChan <$> newChan
-
+            scotty 3000 $ searchUIServer connVar'
             race_
                 (runSpuriobot strApiToken pool chan connVar' retryService)
                 (run 8080 $ logStdout $ serve webhookAPI (mainServer strApiToken pool chan connVar'))
@@ -142,7 +143,7 @@ spurioServer = jobEvent :<|> systemEvent :<|> jobEvent
 mainServer :: GitLabToken -> Pool Database.PostgreSQL.Simple.Connection -> RetryChan -> TMVar SQLite.Connection -> Server WebHookAPI
 mainServer tok pool chan connVar' = hoistServer webhookAPI (nt tok pool chan connVar') spurioServer
   where
-    nt :: GitLabToken -> Pool Database.PostgreSQL.Simple.Connection -> RetryChan -> TMVar SQLite.Connection -> Spuriobot a -> Handler a
+    nt :: GitLabToken -> Pool Database.PostgreSQL.Simple.Connection -> RetryChan -> TMVar SQLite.Connection -> Spuriobot a -> Servant.Handler a
     nt t p c cv action = liftIO $ runSpuriobot t p c cv action
 
 -- | This turns the a request processor into a webhook endpoint by immediately
