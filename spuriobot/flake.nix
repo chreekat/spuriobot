@@ -7,10 +7,12 @@
   outputs = { self, nixpkgs, ... }:
     let
       hsOverlay = pkgs: self: super: {
-        spuriobot = pkgs.haskell.lib.compose.disableExecutableProfiling
-          (pkgs.haskell.lib.compose.justStaticExecutables
-            (pkgs.haskell.lib.compose.appendConfigureFlags ["--verbose=1"]
-              (self.callCabal2nix "spuriobot" ./. {})));
+        spuriobot = pkgs.lib.pipe (self.callCabal2nix "spuriobot" ./. {}) [
+          pkgs.haskell.lib.compose.disableExecutableProfiling
+          pkgs.haskell.lib.compose.justStaticExecutables
+          (pkgs.haskell.lib.compose.appendConfigureFlags ["--verbose=1"])
+          pkgs.haskell.lib.compose.failOnAllWarnings
+        ];
         # responseLinks
         req = pkgs.lib.pipe super.req [
           (pkgs.haskell.lib.compose.overrideSrc
