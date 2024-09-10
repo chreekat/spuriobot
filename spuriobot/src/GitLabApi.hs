@@ -1,3 +1,4 @@
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -31,35 +32,38 @@ module GitLabApi (
     finishedJobToJob
 ) where
 
+import Control.Applicative ((<|>))
+import Control.Monad.Catch
 import Data.Aeson
-import qualified Data.Aeson.Types as Aeson
-import qualified Data.Attoparsec.Text as AttoText
-import qualified Data.Attoparsec.Time as Atto
+import Data.Aeson.Encoding (text)
+import Data.Aeson.Types qualified as Aeson
+import Data.Attoparsec.Text qualified as AttoText
+import Data.Attoparsec.Time qualified as Atto
+import Data.ByteString (ByteString)
+import Data.ByteString qualified as BS
+import Data.Int (Int64)
 import Data.Text (Text)
-import qualified Data.Text as T
+import Data.Text qualified as T
+import Data.Text.Encoding qualified as T
+import Data.Time (UTCTime)
+import Data.Time.LocalTime (localTimeToUTC, utc)
+import GHC.Generics (Generic)
 import Network.HTTP.Req (
+    (/:),
+    (/~),
     NoReqBody (..),
     ReqBodyJson (..),
     defaultHttpConfig,
     headerRedacted,
     https,
+    ignoreResponse,
     jsonResponse,
     req,
     responseBody,
     runReq,
-    (/:), (/~), ignoreResponse,
- )
-import qualified Network.HTTP.Req as R
-import Data.Time (UTCTime)
-import Data.Int (Int64)
-import Data.Time.LocalTime (localTimeToUTC, utc)
-
-import GHC.Generics (Generic)
-import Data.ByteString (ByteString)
+    )
+import Network.HTTP.Req qualified as R
 import Text.URI (mkURI, URI)
-import Control.Applicative ((<|>))
-import Control.Monad.Catch
-import Data.Aeson.Encoding (text)
 
 --
 -- GitLab API types and handlers
@@ -122,6 +126,8 @@ data Job = Job
     , jobFinishedAt :: Maybe UTCTime
     , jobFailureReason :: Maybe JobFailureReason
     , jobName :: Text
+    , jobBlob :: Text
+    -- ^ The whole JSON object provided by GitLab
     }
     deriving (Show, Eq)
 
@@ -136,6 +142,7 @@ instance FromJSON Job where
             <*> o .:? "finished_at"
             <*> o .:? "failure_reason"
             <*> o .: "name"
+            <*> pure (T.decodeUtf8 (BS.toStrict (encode o)))
 
 -- | Failure reasons that we care about.
 data JobFailureReason = JobTimeout | JobStuck | RunnerSystemFailure | OtherReason Text
@@ -192,6 +199,8 @@ data FinishedJob = FinishedJob
     , finishedJobLogs :: Text
     , finishedJobId :: JobId
     , finishedJobCreatedAt :: UTCTime
+    , finishedJobBlob :: Text
+    -- ^ The whole JSON object provided by GitLab
     }
     deriving (Show, Eq)
 
@@ -206,6 +215,7 @@ finishedJobToJob FinishedJob {..} = Job
     , jobFinishedAt = Just finishedJobFinishedAt
     , jobFailureReason = finishedJobFailureReason
     , jobName = finishedJobName
+    , jobBlob = finishedJobBlob
     }
 
 --------------------------

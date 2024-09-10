@@ -196,6 +196,7 @@ fetchFinishedJob p@(ProjectId projId) jobId = do
         , finishedJobProjectPath = projPath projInfo
         , finishedJobLogs = logs
         , finishedJobId = jobId
+        , finishedJobBlob = jobBlob job
         }
 
 -- | Once a job is finished, we need to add its logs to the FTS database, and we
