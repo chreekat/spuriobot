@@ -5,7 +5,7 @@ CACHIX ?= cachix -c $(CACHIX_CONFIG)
 NIX ?= nix --quiet --print-build-logs
 
 test:
-	cabal test
+	cabal test --ghc-option=-Werror
 
 build:
 	$(NIX) build
