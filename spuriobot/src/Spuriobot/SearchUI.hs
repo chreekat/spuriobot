@@ -1,3 +1,4 @@
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveGeneric #-}
@@ -6,6 +7,8 @@ module Spuriobot.SearchUI (searchUIServer) where
 
 import Web.Scotty
 import Database.SQLite.Simple (Connection, query, SQLError (..))
+import Database.SQLite.Simple.FromRow
+import Database.SQLite.Simple.QQ
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Time.Format (formatTime, defaultTimeLocale)
@@ -27,8 +30,10 @@ data JobInfo = JobInfo
   , runnerId :: Maybe Int64
   , runnerName :: Maybe Text
   , jobName :: Text
-  , projectPath :: Text
   } deriving (Generic, Show)
+
+instance FromRow JobInfo where
+    fromRow = JobInfo <$> field <*> field <*> field <*> field <*> field <*> field
 
 -- Define the SearchResults data type
 data SearchResults a = NoSearch | SearchResults [a]
@@ -53,8 +58,6 @@ renderJob job =
       "Runner Id: " >> toHtml (maybe "N/A" show (runnerId job))
       br_ []
       "Runner Name: " >> toHtml (maybe "N/A" id (runnerName job))
-      br_ []
-      "Project Path: " >> toHtml (projectPath job)
 
 -- HTML template for the search form and results
 renderPage :: Maybe Text -> SearchOutcome JobInfo -> Bool -> Int -> Bool -> Html ()
@@ -112,13 +115,25 @@ searchJobs (Just "") _ _ _ = pure (SearchSuccess NoSearch) -- empty string treat
 searchJobs (Just "\"\"") _ _ _ = pure (SearchSuccess NoSearch) -- empty string treated as Nothing when exact=False
 searchJobs (Just wrappedKeyword) limit offset conn = do
   let -- countQry = "SELECT COUNT(*) FROM job WHERE job_id IN (SELECT rowid FROM job_trace WHERE trace MATCH ?);"
-      dataQry = "SELECT job_id, job_date, web_url, runner_id, runner_name, job_name, project_path \
-                \FROM job WHERE job_id IN (SELECT rowid FROM job_trace WHERE trace MATCH ?) \
-                \ORDER BY job_date DESC LIMIT ? OFFSET ?;"
+      dataQry = [sql|
+        SELECT
+        job_id,
+        job_blob->>'created_at' as job_date,
+        job_url,
+        job_blob->>'runner'->>'id',
+        job_blob->>'runner'->>'description',
+        job_blob->>'name'
+        FROM job
+        WHERE job_id IN (
+            SELECT rowid FROM job_trace WHERE trace MATCH ?
+        )
+        ORDER BY job_date DESC
+        LIMIT ?
+        OFFSET ?
+      |]
   
   -- totalRows <- query conn countQry (Only wrappedKeyword) :: IO [Only Int]
-  rows <- query conn dataQry (wrappedKeyword, limit, offset)
-  let jobs = map (\(jid, jdate, url, rid, rname, jname, path) -> JobInfo jid jdate url rid rname jname path) rows
+  jobs <- query conn dataQry (wrappedKeyword, limit, offset)
   pure $ SearchSuccess (SearchResults jobs)
 
 
